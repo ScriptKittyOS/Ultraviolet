@@ -15,6 +15,10 @@ defmodule HacktuiAgent.DispatchTest do
 
     def propose_action(%{case_id: "case-1", action_class: :contain, target: "host-42"}, _opts),
       do: %{case_id: "case-1", action_class: :contain, target: "host-42", requires_approval: true}
+
+    # Echoes whatever it is handed, so a test can assert what Dispatch passed on rather than
+    # what this fake decided to return.
+    def propose_action(spec, _opts), do: Map.put(spec, :requires_approval, true)
   end
 
   test "dispatches read-only MCP tools to the hub query service" do
@@ -37,6 +41,28 @@ defmodule HacktuiAgent.DispatchTest do
              Dispatch.call(
                :propose_action,
                %{case_id: "case-1", action_class: :contain, target: "host-42"},
+               proposal_service: FakeProposalService
+             )
+  end
+
+  # The protocol core passes argument values through unchanged: a client sends the string
+  # "contain" and that is what arrives. Turning it into :contain is this project's vocabulary,
+  # so the coercion lives here. Covered explicitly because it used to be covered by a protocol
+  # test that no longer asserts it -- moving behaviour moves the burden of proving it.
+  test "coerces the wire's action_class string into the domain atom" do
+    assert {:ok, %{action_class: :contain}} =
+             Dispatch.call(
+               :propose_action,
+               %{case_id: "case-1", action_class: "contain", target: "host-42"},
+               proposal_service: FakeProposalService
+             )
+  end
+
+  test "leaves an action_class it does not recognise alone, for the service to reject" do
+    assert {:ok, %{action_class: "teleport"}} =
+             Dispatch.call(
+               :propose_action,
+               %{case_id: "case-1", action_class: "teleport", target: "host-42"},
                proposal_service: FakeProposalService
              )
   end

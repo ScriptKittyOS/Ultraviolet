@@ -445,7 +445,7 @@ HACKTUI_MCP_STDIO=1 ./bin/hacktui-mcp
 ## Quick initialize test
 
 ```bash
-body='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"demo","version":"0.1"}}}'
+body='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"demo","version":"0.1"}}}'
 printf '%s\n' "$body" | ./bin/hacktui-mcp
 ```
 
@@ -955,7 +955,7 @@ mix hacktui.tui
 And if you want to test MCP:
 
 ```bash
-body='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"demo","version":"0.1"}}}'
+body='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"demo","version":"0.1"}}}'
 printf '%s\n' "$body" | ./bin/hacktui-mcp
 ```
 
