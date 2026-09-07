@@ -1,7 +1,8 @@
 defmodule HacktuiAgent.ContractsTest do
   use ExUnit.Case, async: true
 
-  alias HacktuiAgent.{HermesBoundary, MCP.ToolCatalog, MCP.ToolSpec}
+  alias BeamMCP.ToolSpec
+  alias HacktuiAgent.{HermesBoundary, MCP.ToolCatalog}
 
   test "defines a bounded MCP tool catalog" do
     read_only_tools = ToolCatalog.read_only_tools()

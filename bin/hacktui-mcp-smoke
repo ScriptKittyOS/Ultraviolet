@@ -12,7 +12,7 @@ request = {
     "id": 1,
     "method": "initialize",
     "params": {
-        "protocolVersion": "2024-11-05",
+        "protocolVersion": "2025-11-25",
         "capabilities": {},
         "clientInfo": {"name": "hacktui-mcp-smoke", "version": "0.1.0"}
     }
@@ -61,7 +61,22 @@ try:
             print(err, file=sys.stderr)
         sys.exit(1)
 
-    result = response.get("result", {})
+    # An error response carries "error" and no "result". Reading result alone printed
+    # the success banner over a -32022 refusal and exited 0 (16j round 1, r1-B1).
+    if "error" in response:
+        err = response["error"]
+        print(
+            f"initialize refused: {err.get('message')} "
+            f"(code {err.get('code')}) data={err.get('data')}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if "result" not in response:
+        print(f"initialize response has neither result nor error: {response}", file=sys.stderr)
+        sys.exit(1)
+
+    result = response["result"]
     server = result.get("serverInfo", {})
     print("MCP initialize ok")
     print(f"protocolVersion={result.get('protocolVersion')}")

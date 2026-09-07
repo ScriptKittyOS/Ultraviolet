@@ -91,8 +91,23 @@ defmodule HacktuiAgent.MCP.Dispatch do
 
   def call(:propose_action, action_spec, opts) when is_map(action_spec) do
     proposal_service = Keyword.get(opts, :proposal_service, ProposalService)
-    {:ok, proposal_service.propose_action(action_spec, opts)}
+    {:ok, proposal_service.propose_action(coerce_action_class(action_spec), opts)}
   end
 
   def call(_tool, _args, _opts), do: {:error, :unknown_tool}
+
+  # The protocol core hands values through unchanged: turning "contain" into :contain is domain
+  # knowledge, and a generic MCP layer that guessed at it would be carrying this project's
+  # vocabulary. The schema's enum is what constrains the value; this maps the three it allows
+  # and leaves anything else alone for the service to reject.
+  defp coerce_action_class(%{action_class: value} = spec) when is_binary(value) do
+    %{spec | action_class: action_class_atom(value)}
+  end
+
+  defp coerce_action_class(spec), do: spec
+
+  defp action_class_atom("contain"), do: :contain
+  defp action_class_atom("observe"), do: :observe
+  defp action_class_atom("notify_export"), do: :notify_export
+  defp action_class_atom(other), do: other
 end

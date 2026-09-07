@@ -284,3 +284,11 @@ sourcing the function from `tools/gate.sh` is the obvious shape, and 17's PLAN d
 Deliberately cited by **construct, not line number**: both files change under active work, and
 a line citation in a file under change is the stale-citation class this repository has already
 committed once inside the document recording the fix for it.
+
+## 12. The MCP surface changed in 16j
+
+The MCP surface changed in slice 16j. Changes are pinned by tests in
+`apps/hacktui_agent/test/mcp_stdio_framing_test.exs`.
+
+`ping` carrying a `_meta` revision is a known `beam_mcp` defect, tracked as SCR-257, and is
+pinned by no test here because a test would pin the defect.

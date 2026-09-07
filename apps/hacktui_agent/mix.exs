@@ -24,6 +24,7 @@ defmodule HacktuiAgent.MixProject do
 
   defp deps do
     [
+      {:beam_mcp, "~> 0.1.0"},
       {:hacktui_core, in_umbrella: true},
       {:hacktui_hub, in_umbrella: true},
       {:jido, "~> 2.0"}
