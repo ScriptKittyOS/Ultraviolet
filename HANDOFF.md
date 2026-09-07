@@ -14,8 +14,14 @@ named so you can re-run it rather than trust it.
 
 ## 1. Where things stand
 
+<!-- STALE as of slice 16k: `main` is at `86681a2`. See §10. Not corrected here; the
+     documentation-drift sweep is its own unit of work, BACKLOG.md §14. -->
+
 `main` is at **`5a6e566`** (slice 15, the commit that added this file). The suite is
-**248 tests, 0 failures** — green for the first time. Re-derived at slice 16 rather than
+**248 tests, 0 failures** <!-- STALE as of slice 16k: the figure here is from slice 15. Derive the current one --
+     `mix test 2>&1 | grep -oE '[0-9]+ tests?, [0-9]+ failures?' | awk -F'[ ,]' '{t+=$1;f+=$4}
+     END{print t" tests, "f" failures"}'` -- rather than reading a transcribed number.
+     See §10 and BACKLOG.md §14. --> — green for the first time. Re-derived at slice 16 rather than
 carried forward: `mix test` summed across the umbrella apps gives 248/0, and it reconciles
 with CI's advisory integration job (266 tests when `--include integration` adds the 18
 integration-tagged ones; 266 − 18 = 248).
@@ -25,11 +31,11 @@ integration-tagged ones; 266 − 18 = 248).
 | compile `--warnings-as-errors` | — | pass, hard-blocking |
 | format `--check-formatted` | — | pass, hard-blocking |
 | tracked secret-shaped files | — | pass, hard-blocking |
-| test | **0** | pass — still a **ratchet**, not hard-blocking; retirement is slice 16's next commit |
+| test | **0** | **STALE — see §10.** This row predates slice 16: `tools/gate.sh` scores `test` with `hard_zero`, and the baseline entry is retired. Not corrected here; BACKLOG.md §14 |
 | credo `--strict` | **76** | held |
 | dialyzer | **43** | held |
 | deps.audit / hex.audit | 12 / 20 | advisory, not blocking (**slice 18**'s work) |
-| mutation (`tools/mutate.sh`) | 0 survivors | 14/14 killed, CANARY aborts |
+| mutation (`tools/mutate.sh`) | 0 survivors | **STALE — see §10.** This figure is from slice 15; `./tools/mutate.sh tools/mutants/c5.tsv \| tail -2` gives the current one. CANARY aborts |
 | attestation | — | **GREEN on `main`** — run 33594696902; see §2 |
 
 Slices 01 through 13b, and 15, are merged. **14 is not** — it has a PLAN and CRITERIA and
@@ -306,3 +312,82 @@ make no SPDX/REUSE claim. Exact commands and their output go in the signoff.
 - **Reviewers get `CRITERIA.md` before they are spawned**, and must classify every finding
   as blocking or residual. A round finding only residual items is PASS-with-residuals.
   Three-round cap unless a blocking class is hit. An unclassified finding is not actionable.
+
+---
+
+## 10. Slice 16k — the baseline gate no longer passes unmeasured (SCR-69, first half)
+
+`Gate - baseline may only decrease` is a required status check. `github.event.before` is
+**absent from the `schedule` and `workflow_dispatch` event payloads**, so
+`.github/workflows/ci.yml` expanded to `./tools/gate.sh baseline ""` and `baseline_gate`
+matched the empty string in the same branch as the all-zeros sentinel: it printed
+`no previous ref (new branch); nothing to compare` and returned **0**. Every nightly run in
+this repository's history was green having compared zero baselines.
+
+Measured before any fix, from the job logs (`gh api repos/ScriptKittyOS/Ultraviolet/actions/jobs/<id>/logs`):
+
+| run | event | head | job | result |
+|---|---|---|---|---|
+| `34028977996` | `schedule` | `778accb8` | `101474937084` | success, 0 comparisons |
+| `34071415451` | `workflow_dispatch` | `86681a2` | `101589359652` | success, 0 comparisons |
+
+A comparison was available in both cases — each head's parent carries
+`.claude/gate-baseline.json`.
+
+**The fix reuses a guard that already existed.** `Gate - attestation` handles the identical
+payload at the `elif` in its own `run:` block, and in run `34028977996` (job `101474937083`)
+it measured while the baseline job did not. The same `elif` now sits in the `baseline` job,
+routing an empty-or-sentinel `before` to `${{ github.sha }}~1`; `baseline_gate` **refuses an
+empty ref outright**. The all-zeros sentinel keeps its pass as its own labelled case and is
+now unreachable from CI.
+
+**Where the guarantee actually lives.** `apps/hacktui_core/test/ci_baseline_guard_test.exs`
+is an ordinary hard-blocking test — **no new `Gate -` job**, so no ruleset change (§4c), the
+same reasoning slice 16c used for the schema digest. Its tests that call `run_gate/1` **run the gate**
+rather than reading it, and those are the ones that cannot be satisfied by a file that merely
+looks right. (Drafts of this sentence carried a count of them and each was wrong, because
+every disposition that added one left the number behind. The property is stated and no count
+of them appears here.) Round 1 shipped only the reading
+assertions and both reviewers broke them independently: parking
+`[ -z "$ref" ] && { note ...; return 0; }` one line above the inspected branch reinstates the
+pre-16k defect exactly while leaving that branch byte-identical, and all text assertions
+stayed green. That mutation is now row `gate_baseline_early_bypass` in
+`tools/mutants/c5.tsv`, and it dies.
+
+**Numbers this slice moves** (the §1 table above predates it and is not updated here —
+see "still stale" below):
+
+- mutation harness: **no survivors.** The count of rows, the split between reviewer survivors
+  and derived rows, and the totals before and after are **not transcribed here** — they go
+  stale the moment a row is added, and review kept blocking on exactly that. Derive them:
+
+  ```
+  ./tools/mutate.sh tools/mutants/c5.tsv | tail -2
+  git diff <base> -- tools/mutants/c5.tsv | grep '^+[a-z]' | cut -f1   # the rows this slice adds
+  ```
+
+  **Which rows are reviewer survivors** — a lane demonstrated each defeating the pin, and the
+  row is the receipt: `gate_baseline_early_bypass`, `ci_baseline_second_guard`,
+  `ci_baseline_computed_sentinel`, `ci_baseline_bash_prefixed`, `ci_baseline_extra_space`,
+  `ci_baseline_glob_spelling`, `ci_baseline_cr_smuggled_line`,
+  `gate_baseline_post_sentinel_bypass`.
+
+  **Which rows this slice adds are derived**: `ci_baseline_guard_route`, `ci_baseline_guard_condition`,
+  `gate_baseline_empty_ref_passes`, `ci_baseline_duplicate_job_key`,
+  `ci_baseline_trailing_true`, `ci_baseline_continue_on_error`, `ci_baseline_job_if_skip`,
+  `ci_baseline_job_renamed`. Both lists are of the rows THIS SLICE ADDS; the rows that predate
+  it are neither. Naming them is durable; counting them was not, and saying "the remainder"
+  was not either — over the whole file it mislabels every row the slice did not write.
+
+**Still open, deliberately.** SCR-69's other half: a force-push sets `github.event.before` to
+a well-formed but **unreachable** SHA, which is not the sentinel, so `git cat-file -e` fails
+and the gate goes **red on a tree that is fine**. Opposite failure direction, different
+remedy, out of 16k's scope. Recorded in `BACKLOG.md` §13 with the corrected evidence.
+
+**Still stale, and NOT fixed by this slice.** §1 above says `main` is at `5a6e566`; it is at
+`86681a2`. §1's gate table described `test` as a ratchet awaiting retirement, which slice 16
+completed, and its suite and mutation numbers are likewise from slice 15. Each such cell now
+carries an inline STALE marker, so a reader of §1 is warned at the point of the falsehood.
+These are instances of a documentation-drift class being derived and swept as its
+own unit of work; fixing them here would have been silent scope expansion (§9).
+Do not read §1's numbers as current.

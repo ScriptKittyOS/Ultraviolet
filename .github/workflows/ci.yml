@@ -17,8 +17,30 @@ on:
   pull_request:
   schedule:
     # For the advisory job: new CVEs land against unchanged dependencies, so the audits
-    # need a clock. NOT for the baseline gate -- that compares git-tracked values and a
-    # scheduled run would re-compare a commit its own push run already checked.
+    # need a clock.
+    #
+    # This used to add "NOT for the baseline gate -- that compares git-tracked values and a
+    # scheduled run would re-compare a commit its own push run already checked" (quoted in
+    # full: an earlier draft of this comment elided the middle clause, which is the half
+    # that is still true). Slice 16k falsified the rest in both halves, and
+    # review caught the stale sentence in the same diff that falsified it. First: the
+    # baseline job carries no `if:` excluding `schedule`, so it has always RUN on the
+    # nightly -- it simply measured nothing, which is the defect 16k fixes. Second, now
+    # that it measures, the comparison is not always a re-comparison: it compares
+    # `github.sha~1`, and after a rebase-merge of a multi-commit branch that is the
+    # branch's second-to-last commit, not the previous `main` tip, so the nightly's
+    # comparison is NARROWER than the push run's rather than a repeat of it.
+    #
+    # A consequence, derived and not yet observed here (this history is fully linear --
+    # `git rev-list --min-parents=2 --count --all` is 0): if a branch lowers a baseline in one
+    # commit and restores it in the next, the push run compares old-tip -> tip and sees no
+    # change, while the nightly compares those two commits and sees a raise. That would go
+    # red on `main`. It blocks no merge -- required checks are evaluated on a PR's own head.
+    # It is also self-clearing, which an earlier draft of this comment denied when it called
+    # it "noise nobody could clear": the next push to `main` moves `github.sha`, so the next
+    # nightly compares a different pair, and a `_corrections` entry clears it deliberately.
+    # Recorded here so the next person to see it has the mechanism rather than a mystery.
+    #
     # Note: scheduled runs only fire from the default branch.
     - cron: "17 6 * * *"
   workflow_dispatch:
@@ -192,6 +214,22 @@ jobs:
               "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}" \
               || { echo "::error::cannot fetch base ref; refusing to pass unmeasured"; exit 1; }
             ./tools/gate.sh baseline "origin/${{ github.base_ref }}"
+          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ] || [ -z "${{ github.event.before }}" ]; then
+            # Same guard the attestation job carries above, reused rather than re-derived.
+            # `github.event.before` is ABSENT from the schedule and workflow_dispatch
+            # payloads, so this expanded to `baseline ""` and gate.sh matched it in the same
+            # branch as the all-zeros sentinel: "no previous ref (new branch); nothing to
+            # compare", return 0. Measured on run 34028977996 (schedule, main, 778accb8) --
+            # the gate reported success having compared zero keys, on a commit whose parent
+            # 268a83e8 carries the baseline file it declined to read. Nightly runs had been
+            # green on nothing since the schedule trigger was added.
+            #
+            # sha~1, not "nothing": on a multi-commit push this sees only the last commit,
+            # which is the HEAD~1 hole the else branch describes -- but a partial comparison
+            # is strictly more than none, and this branch is reached only when the payload
+            # gave us no better ref. gate.sh now REFUSES an empty ref outright, so this
+            # cannot silently regress to a pass.
+            ./tools/gate.sh baseline "${{ github.sha }}~1"
           else
             # github.event.before, NOT HEAD~1. One run is created per push, at the tip, so
             # HEAD~1 compares only the last commit -- a raise in an earlier commit of the

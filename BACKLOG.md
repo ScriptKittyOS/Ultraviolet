@@ -292,3 +292,153 @@ The MCP surface changed in slice 16j. Changes are pinned by tests in
 
 `ping` carrying a `_meta` revision is a known `beam_mcp` defect, tracked as SCR-257, and is
 pinned by no test here because a test would pin the defect.
+
+## 13. The baseline gate still goes red on a force-pushed ref — SCR-69, second half
+
+Slice 16k closed one half of SCR-69: `Gate - baseline may only decrease` used to go **green
+having compared nothing** whenever the event payload carried no `before`, which is every
+`schedule` and every `workflow_dispatch` run. Measured on runs `34028977996` and
+`34071415451`, both green on zero comparisons. `.github/workflows/ci.yml` now carries the
+same guard the attestation job has, and `baseline_gate` refuses an empty ref outright.
+
+**The other half is open.** A force-push sets `github.event.before` to a well-formed SHA that
+is reachable from no ref. That is not the all-zeros sentinel, so it reaches
+`tools/gate.sh`'s `git cat-file -e "$ref:$BASELINE"`, which fails, and the gate goes **red on
+a tree that is fine**.
+
+Measured: run `33709449011` (`push`, head `27de8a1b`) failed with
+`FAIL -- .claude/gate-baseline.json absent at d025d350…`. The tree was fine, and the run that
+proves it is **`33709453098`** — the `pull_request` run on the *same head*, created four
+seconds later (`02:55:25Z` and `02:55:29Z` per `gh api .../actions/runs/<id> --jq .created_at`),
+which took the `base_ref` branch and compared both keys for real:
+
+```
+$ gh api repos/ScriptKittyOS/Ultraviolet/actions/jobs/100505623057/logs \
+    | sed 's/\x1b\[[0-9;]*m//g'
+[...]   ./tools/gate.sh baseline "origin/main"
+[...]   baseline                 credo_issues: 76 -> 76
+[...]   baseline                 dialyzer_warnings: 43 -> 43
+```
+
+`[...]` marks an elided ISO-8601 timestamp on each line, and the `sed` strips the ANSI colour
+codes the API returns. The first line quoted is part of the runner's echo of the `run:` script,
+not a trace; the untaken branch echoed beside it, and its invocation, are not reproduced.
+
+No branch tally appears here. Consecutive review rounds each corrected the tally in this
+sentence and each correction was wrong again — once by counting the current file against a log
+from the older one. Read the log for what that run's script was, and
+`sed -n '/^  baseline:/,/^  advisories:/p' .github/workflows/ci.yml | grep -cE '^\s*(if|elif|else)\b'`
+for what it is now — scoped to the job, because unscoped over the whole file it counts every
+job's branches. Nothing else was
+added to the block -- an earlier draft carried an editorial comment inside it, which is the
+same defect as an unmarked elision in the other direction. Marked rather than silently trimmed: a block under a
+bare `$` prompt claims to be what the command prints.
+
+**Not** run `33877201424`, which an earlier draft of this entry cited as the green control.
+Review measured that its `before` was the all-zeros sentinel, so it compared **zero keys** —
+it is a second sighting of the bug 16k closed, not evidence about the tree. It would also no
+longer reproduce: `ci.yml`'s new `elif` now routes all-zeros to `${{ github.sha }}~1`, so that
+same push performs a real comparison. Recorded because citing it would have sent whoever picks
+this up chasing a green that the current code cannot produce.
+
+`fetch-depth: 0` does not help; a full-depth fetch fetches refs, and an orphaned commit is
+reachable from none.
+
+This is the opposite failure direction from the one 16k fixed, and it wants a different
+remedy: a reachability probe before the ref is used, and a decision about what to compare
+against when the recorded start point no longer exists. Deliberately left out of 16k rather
+than folded in.
+
+## 14. Documentation drift — a class, to be derived and swept as one unit
+
+Tracked documentation carries statements that were true when written and are not true now.
+This is recorded as a **class with a derivation**, not as a list of instances: a list gets
+fixed and the class stays open. Each entry names the **derivation** that finds the whole
+population, so the sweep can prove it is complete rather than assert it. Only the first is a
+runnable one-liner; the rest are procedures, and saying so is the difference between a
+derivation and a command that does not exist. Review measured this distinction: the headline
+here first claimed every entry "names the command", and most do not.
+
+| class | derivation | known instances |
+|---|---|---|
+| a `mix` task cited in a tracked `.md` that does not exist | every `mix <task>` in `git grep -ho 'mix [a-z][a-z0-9_]*\(\.[a-z][a-z0-9_]*\)*' -- '*.md'`, checked against `mix help` | `mix phx.server` at `docs/operator_boot_runbook.md:9` — there is no Phoenix application in this umbrella |
+| an umbrella app named in a doc that is not in `apps/` | every `hacktui[_a-z]*` cited as an app, checked against `ls apps/` | `ARCHITECTURE.md`'s "Umbrella apps" list has one more entry than `apps/` has directories — `sed -n '/^## Umbrella apps/,/^## Current/p' ARCHITECTURE.md \| grep -c '^- '` against `ls apps/ \| wc -l`, both run and checked, not written from memory. The extra one is `hacktui` itself, which is the umbrella **root** (`mix.exs`, `apps_path: "apps"`), not an app — so the sweep must decide whether to drop it or relabel it, and this cell deliberately does not pre-judge that. One reviewer read it as a real instance and one as a false positive; the disagreement is the finding |
+| a doc quoting a command whose real output contradicts the doc's stated expectation | run each fenced read-only command and compare | `README.md:890` — `git ls-files \| grep env` is the **unanchored** pattern `CLAUDE.md` §10 records as always matching `envelope.ex`; it returns `.env.example` and `envelope.ex` on this tree, under `README.md:895`'s stated expectation of "no private `.env` files". The anchored form in `tools/gate.sh` returns 0 hits on the same tree. `:891`'s `grep key` returns nothing and is **not** an instance — the first draft of this cell cited the pair |
+| a doc asserting a `main` SHA or a gate state that has moved | every `[0-9a-f]{7,40}` near `main`, and every gate-status table | `HANDOFF.md` §1's "`main` is at `5a6e566`" (now `86681a2`), its `test` row and its `248 tests` — cells carrying a slice-15 figure, each marked in place by slice 16k and none corrected. Cited by content, not by line — this table's own subject is citations that go stale, and two earlier drafts of this cell proved it, one citing `HANDOFF.md:17` after the same commit moved it to `:20`, the other quoting a string the same commit had deleted |
+
+Slice 16k marked `HANDOFF.md` §1 **in place**, so a reader of §1 is warned at the point of
+the falsehood rather than hundreds of lines later. The row above says which cells are only
+flagged and which was corrected; this sentence repeats neither the list nor the count, because
+review blocked here on exactly that repetition — a tally that disagreed with the
+row, and then a summary that contradicted it. It is the class this entry is about, occurring
+inside the entry about it.
+
+## 15. What the baseline-gate pin covers, and what it does not
+
+Slice 16k pins the `baseline` job by asserting its **entire body** — every non-comment,
+non-blank line under `jobs:` → `baseline:`, whitespace collapsed — against a literal list in
+`apps/hacktui_core/test/ci_baseline_guard_test.exs`, plus the requirement that `  baseline:`
+occur exactly once under `jobs:`.
+
+**It arrived at that shape the hard way.** Rounds 2 through 5 each pinned a *fragment* of the
+job — the presence of one line, then the absence of two values, then a list of permitted
+invocations, then lines containing `gate.sh` — and a reviewer walked past each one with a
+working survivor: valid YAML, the suite green, and this required status check **green having
+compared zero baselines**. The last of those was `bash tools/gate?sh baseline "$(printf …)"`,
+which runs the gate and contains no `gate.sh` token at all. There is no token a respelling
+must contain, because a shell word is resolved at run time and matched here at read time. Any
+pin that first *recognises* a subset of the job and then rules on the subset can be spelled
+around; a pin that asserts the whole body cannot, because every survivor adds or changes a
+line. The mutants in `tools/mutants/c5.tsv` whose names begin `ci_baseline_` or
+`gate_baseline_` are that history, and all die. **Which of them are reviewers' own survivors
+is recorded in `HANDOFF.md` §10 by naming them.** Review blocked on a count here more than
+once: each time a figure correct for one set was restated over a differently-drawn subset and
+was off by one. Naming one population in one place removes the mechanism rather than the
+instance.
+
+**Covered — verified by mutant, each one KILLED:**
+
+| lever | mutant |
+|---|---|
+| a second guard routing a trigger to the sentinel | `ci_baseline_second_guard` |
+| the sentinel computed rather than written | `ci_baseline_computed_sentinel` |
+| the command respelled (`bash tools/…`, extra whitespace, a glob) | `ci_baseline_bash_prefixed`, `ci_baseline_extra_space`, `ci_baseline_glob_spelling` |
+| `continue-on-error: true` on the job | `ci_baseline_continue_on_error` |
+| a job-level `if:` excluding a trigger | `ci_baseline_job_if_skip` |
+| a trailing command swallowing the gate's exit code | `ci_baseline_trailing_true` |
+| the job's `name:` changed — which changes its **check context**, and a required context that never reports blocks every pull request forever (`CLAUDE.md` §4c) | `ci_baseline_job_renamed` |
+| the job key removed, or a second job of the same key added | `ci_baseline_duplicate_job_key` |
+
+The `name:` row is worth reading twice. An earlier draft of this entry said a rename was
+covered by the uniqueness assertion on the job **key**. Review measured that the key is not
+the check context — `secret-scan` is the key, `Gate - tracked secret-shaped files` is the
+context — so the edit that was covered could not break a required check, and the edit that
+could break one passed green. The whole-body assertion covers both.
+
+**NOT covered — everything outside the job's own body:**
+
+- the `on:` block. Deleting `schedule:` or `workflow_dispatch:` means the gate never runs on
+  that trigger at all. That is a different failure from reporting an unmeasured pass, but it
+  is a way to make this gate stop saying anything.
+- workflow-level `env:` (`LOGDIR`), the `concurrency:` group, and the shared
+  `.github/actions/beam-setup` composite action.
+- the branch-protection ruleset itself, which decides whether this context is required at
+  all. Owner-only (`CLAUDE.md` §4c).
+- every other `Gate -` job, none of which has an equivalent pin — and workflow-level
+  `defaults:`, which this test does not read. What a `run.shell` override does to a job at
+  run time is not measured here and is not claimed.
+- **a second workflow file.** The test reads `.github/workflows/ci.yml` and nothing asserts
+  that it is the only workflow (`ls .github/workflows/`). Whether a job of the same `name:` in
+  another file would report under the same required context is not measured here and is not
+  claimed; what is measured is that this pin would not see it.
+- `tools/gate.sh`'s interior beyond the paths the tests exercise. The positive control (a real
+  ref must produce a comparison) and the refusal tests cover the entry paths; the
+  comparison loop itself is covered by `gate_baseline_*` mutants, not exhaustively.
+
+This list is what has been **found**, not a proof of completeness. Successive review rounds
+each found one more, and the honest summary is that it is a list of known levers, not a closed
+set.
+
+Extending the same whole-body assertion to the other `Gate -` jobs is the obvious next step
+and is deliberately not slice 16k's work: it is one literal per job to maintain, and it should
+be decided as one thing rather than smuggled in beside a fix to one of them.

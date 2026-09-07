@@ -161,17 +161,63 @@ ratchet() {
 # A's raise is never compared, and no later run revisits it. On a slice branch a
 # multi-commit push is the normal case, so that hole is the common path, not the corner.
 #
-# Fails closed on zero comparisons. Previously the PR path could exit 0 having compared
-# nothing and printed nothing, because `git show` had no failure branch and an empty
-# `old` made every key skip.
+# Fails closed on zero comparisons, with EXACTLY ONE exception: the all-zeros sentinel
+# branch below, which returns 0 having compared nothing. That carve-out is stated here, in the same
+# sentence as the rule, and not two paragraphs below it -- because the line this replaces
+# said "Fails closed on zero comparisons" as an unqualified universal and was read that way
+# for as long as it stood, while the empty-ref path passed on zero comparisons. Slice 16k
+# closed that path; review then caught the replacement making the same structural mistake in
+# weaker form. It is not the first correction of this kind in this function -- see the
+# "too strong and is corrected here" note further down, and the two-wrong-mechanisms note
+# near the top of the file. (An ordinal stood here and was dropped: nobody can check "the
+# third", and the count moves every time another one is written.)
+# A headline universal whose exception lives further down is how the first one survived.
+#
+# What changed in 16k: an empty string matched the same branch as the sentinel and returned
+# 0. `github.event.before` is absent from the schedule and workflow_dispatch payloads, so CI
+# took that path on two of its four triggers; run 34028977996 (schedule, main, 778accb8) is
+# green on zero comparisons, printing "no previous ref (new branch)" about a branch that is
+# `main`.
+#
+# Empty is not a ref. It is never a value a caller means; it only arrives from a payload
+# field that was not populated, and a gate handed one has measured nothing and must say so.
+# The all-zeros SENTINEL is different -- a real value with a real meaning, a push that
+# creates a branch -- and still returns 0 in that branch.
+#
+# No PRODUCTION caller reaches it: .githooks/pre-commit:247 passes a literal HEAD, and
+# ci.yml's `elif` intercepts all-zeros and routes it to `sha~1`. One caller does --
+# apps/hacktui_core/test/ci_baseline_guard_test.exs, which pins this branch by running it.
+# (Two earlier versions of this paragraph were wrong and both were caught by review: the
+# first called the pass "a local fallback" when no local caller existed, and the second said
+# NO caller in the tree reaches it, in the same commit that added one.)
+#
+# It is kept because the sentinel is a real git value a future caller may legitimately hand
+# over, and because deleting it would answer that caller with a message about the wrong
+# thing. Measured, with the branch deleted in a throwaway copy:
+#
+#     baseline  FAIL -- .claude/gate-baseline.json absent at 0000...0000; refusing to pass unmeasured
+#
+#   (the forty zeros are abbreviated; nothing else is trimmed)
+#
+# -- a report that a file is missing at a ref, when the ref is a sentinel meaning "there is
+# no previous ref". An earlier version of this sentence guessed the caller would land on the
+# empty-ref refusal instead. It would not; the guess was measured and was wrong.
+#
+# Previously the PR path could exit 0 having compared nothing and printed nothing, because
+# `git show` had no failure branch and an empty `old` made every key skip.
 # ---------------------------------------------------------------------------
 baseline_gate() {
   local ref="${1:-}" prev="$LOGDIR/base.prev" compared=0 raised=0
 
   [ -r "$BASELINE" ] || { note baseline "FAIL -- $BASELINE missing or unreadable"; return 1; }
 
-  if [ -z "$ref" ] || [ "$ref" = "0000000000000000000000000000000000000000" ]; then
-    note baseline "no previous ref (new branch); nothing to compare"
+  if [ -z "$ref" ]; then
+    note baseline "FAIL -- empty ref; refusing to pass unmeasured (an absent event payload field, not a ref)"
+    return 1
+  fi
+
+  if [ "$ref" = "0000000000000000000000000000000000000000" ]; then
+    note baseline "all-zeros sentinel (branch created by this push); nothing to compare"
     return 0
   fi
 
