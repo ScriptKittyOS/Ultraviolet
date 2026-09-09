@@ -54,7 +54,7 @@ fi
 # allowed-signers file, which is deliberately out of scope for this slice.
 if ! grep -qE '^Reviewed-diff:[[:space:]]*sha256:[0-9a-f]{64}' "$1"; then
   staged=$(git -c diff.noprefix=false -c diff.context=3 -c diff.algorithm=myers \
-    -c core.abbrev=40 diff --cached --binary --no-ext-diff --no-textconv \
+    -c core.abbrev=40 -c diff.renames=true -c diff.renameLimit=0 diff --cached --binary --no-ext-diff --no-textconv \
     -- . ':(exclude)internal/**' | sha256sum | cut -d' ' -f1)
 
   if [ "$staged" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then

@@ -523,7 +523,7 @@ baseline_gate() {
 # script is a behaviour change, and removing that copy is slice 17's work. It does not sit
 # on faith in the meantime -- apps/hacktui_core/test/diff_recipe_test.exs asserts the two
 # token sequences are identical, so they cannot drift silently inside that window.
-DIFF_RECIPE=(-c diff.noprefix=false -c diff.context=3 -c diff.algorithm=myers -c core.abbrev=40)
+DIFF_RECIPE=(-c diff.noprefix=false -c diff.context=3 -c diff.algorithm=myers -c core.abbrev=40 -c diff.renames=true -c diff.renameLimit=0)
 DIFF_SCOPE=(--binary --no-ext-diff --no-textconv -- . ':(exclude)internal/**')
 
 derive_diff_hash() {

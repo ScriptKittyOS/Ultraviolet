@@ -442,3 +442,103 @@ set.
 Extending the same whole-body assertion to the other `Gate -` jobs is the obvious next step
 and is deliberately not slice 16k's work: it is one literal per job to maintain, and it should
 be decided as one thing rather than smuggled in beside a fix to one of them.
+
+## 16. The reviewable-diff recipe is still not canonical — several knobs move the hash
+
+Slice 16l pinned `diff.renames` **and `diff.renameLimit`** in both copies of `DIFF_RECIPE`
+(SCR-207). This entry records what that did **not** close.
+
+`diff.renameLimit` was not in the original scope and is pinned because round 5 measured that it
+**defeats a pinned `diff.renames=true` on the shipped, unmutated recipe**: with ambient
+`diff.renameLimit=1` and three inexact renames staged, `grep -c 'rename from'` is `0` where the
+pinned recipe gives `3`. Same tree, two hashes, and the rename-blind one at that. Pinning one
+half of a two-part mechanism is not pinning it, so this is inside SCR-207's scope rather than an
+expansion of it. `-c diff.renameLimit=0` means *unlimited* and overrides an ambient value — for
+`git diff`. It does **not** override one for `git status`, measured, which is why the test's
+fixture guard asks `diff --cached --name-status` instead.
+
+**No total appears here, deliberately.** The set of knobs that move the hash is a function of
+the *fixture* you test with, and successive sweeps of differing richness disagreed with each
+other — see the traps below for the account. A count would be a claim about a census nobody has
+taken. What follows is a **lower bound**: inputs measured to move it, each with the evidence.
+
+**The candidate population, derived from git rather than recalled:**
+
+```
+git help -c | grep -E '^(diff|core)\.' | grep -vE '\.<'
+```
+
+**Then**: hash a fixture under the pinned recipe with and without each key, through **one
+measurement path on both sides**, checking git's exit code, and trying **per-key value types**
+rather than booleans only.
+
+| knob | what it does to the bytes |
+|---|---|
+| `diff.mnemonicPrefix` | rewrites the path prefixes: `diff --git a/b.txt b/b.txt` becomes `diff --git c/b.txt i/b.txt` |
+| `diff.suppressBlankEmpty` | drops the leading space from an **empty** context line — under `cat -A`, `" $"` becomes `"$"`. It does not touch a line whose content is a space |
+| `diff.interHunkContext` | merges hunks that would otherwise stay separate, changing the `@@` headers |
+| `diff.orderFile` | reorders the files in the diff entirely |
+| `diff.indentHeuristic` | shifts hunk boundaries on indentation-sensitive insertions — measured by review; the author's fixture did not reproduce it, which is the fixture-dependence this entry is about |
+| `core.attributesFile` | a path, not a boolean. Pointed at a file containing `*.txt -diff`, the diff body becomes `GIT binary patch` |
+| `.git/info/attributes` | **not a config key at all.** Same effect, per-clone, and **no sweep over `git help -c` can ever find it** |
+
+Every one is the failure mode SCR-207 records for `diff.renames`: same tree, different bytes,
+different sha256, so a contributor whose config differs from CI's writes one `Reviewed-diff`
+trailer while `Gate - attestation` derives another — and the gate goes red with nothing in its
+output naming a config knob.
+
+**The remedy is not another flag.** Pinning these one at a time loses the same race repeatedly;
+the recipe should pin a **canonicalising set** in one deliberate change, with a test that
+asserts invariance over the derived population rather than over one knob. Slice 16l is scoped
+to `diff.renames` by SCR-207 and by its own PLAN, and expanding it silently is what §9 forbids.
+`apps/hacktui_core/test/diff_recipe_test.exs`'s invariance test is named and scoped to rename
+config for the same reason: broadening it would fail today, and that failure is this entry.
+
+### Probe traps hit while deriving this, recorded because the numbers are worthless without them
+
+A first sweep reported 49 movers; a second, 79; a third, one; a fourth, several. **Every one of
+them was shaped by its harness or its fixture, the last included** — the fourth did not
+reproduce `diff.indentHeuristic` and did not find `core.attributesFile`, both of which are in
+the table above because review supplied them. The traps:
+
+- **Exit codes unchecked.** git *erroring* on a value it rejects produces empty output, which
+  hashes to something, which differs from the baseline. Errors counted as differences.
+- **Two measurement paths.** A `printf '%s'`-captured candidate compared against a
+  pipeline-computed baseline: `printf '%s'` strips the trailing newline the pipeline keeps, so
+  every knob differed — from the harness, not from git.
+- **A recalled fixture, and a boolean-only value set.** "A rename and a content change" has no
+  blank context line, no widely separated hunks and no indentation-sensitive insertion, so
+  knobs that only act on those read as inert. And a boolean sweep makes git reject
+  integer-valued keys (`fatal: bad numeric config value 'true' for 'diff.interhunkcontext'`),
+  after which a rule of "skip what git rejects" **discards them as knobs that do not move**.
+
+- **A scrubbed environment cannot provoke the thing it scrubs.** Round 5's deepest finding, and
+  it applies to any invariance test, not just this one. The test silences `GIT_CONFIG_GLOBAL`,
+  `GIT_CONFIG_SYSTEM` and `GIT_CONFIG_COUNT` so the caller's config cannot reach the fixture —
+  necessary, for other reasons. But git's built-in default for `diff.renames` **is** `true`,
+  which is exactly what the pin forces, so inside that environment a pinned recipe and an
+  unpinned one emit byte-identical output. Three separate removals of the pin from shipped
+  consumers therefore left the suite at `5 tests, 0 failures` while reddening attestation for a
+  real contributor. **Running the artefact detects an inverted pin and is blind to an absent
+  one.** The fix is a fixture whose OWN LOCAL config is hostile: local config is the one route a
+  `GIT_CONFIG_*` scrub cannot close, since pointing those at `/dev/null` does not touch
+  `.git/config`. Generalised: an invariance test must be able to FAIL for the default value of
+  the thing it pins, or it is only testing agreement.
+
+- **Value-space blindness.** The sweep varied each key over booleans. A key whose hostile value
+  is a *path* — `core.attributesFile` — resolves to a nonexistent file under `true` and reads
+  as inert. Given a real path it rewrites the body to `GIT binary patch`.
+- **And the population is not the whole input.** `.git/info/attributes` has the same effect and
+  is not a config key, so no derivation from `git help -c` can reach it. A sweep over a derived
+  population is still a sweep over the population you thought to derive.
+- **The input can arrive in the process environment, and can override a flag the recipe pins.**
+  `GIT_DIFF_OPTS=-u7` overrides `-c diff.context=3`, which this recipe *does* pin — so the
+  environment is not merely another delivery route for unpinned knobs, it can defeat pinned
+  ones. `GIT_CONFIG_COUNT`/`_KEY_n`/`_VALUE_n` deliver config as if on the command line and are
+  untouched by pointing the config files at `/dev/null`; measured, they cannot beat an explicit
+  `-c`, but they reach anything unpinned. `XDG_CONFIG_HOME/git/attributes` and an untracked
+  worktree `.gitattributes` are two more. None is a config key; no sweep finds any of them.
+
+The population was derived; the *fixture* was recalled, the value space was assumed, and one
+input was not a config key at all. That is the trap this entry exists to stop the next person
+walking into.
