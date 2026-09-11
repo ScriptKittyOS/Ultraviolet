@@ -39,3 +39,11 @@ diff_recipe_staged_unpinned	tools/gate.sh	git "${DIFF_RECIPE[@]}" diff --cached	
 diff_recipe_renamelimit_gate	tools/gate.sh	-c diff.renames=true -c diff.renameLimit=0)	-c diff.renames=true)	apps/hacktui_core/test/diff_recipe_test.exs
 diff_recipe_renamelimit_hook	.githooks/commit-msg	-c diff.renames=true -c diff.renameLimit=0 diff --cached	-c diff.renames=true diff --cached	apps/hacktui_core/test/diff_recipe_test.exs
 diff_recipe_runtime_unset	tools/gate.sh	DIFF_SCOPE=(--binary --no-ext-diff --no-textconv -- . ':(exclude)internal/**')	DIFF_SCOPE=(--binary --no-ext-diff --no-textconv -- . ':(exclude)internal/**')\nunset 'DIFF_RECIPE[8]' 'DIFF_RECIPE[9]' 'DIFF_RECIPE[10]' 'DIFF_RECIPE[11]'	apps/hacktui_core/test/diff_recipe_test.exs
+s38_false_is_safe_mode	apps/hacktui_store/lib/hacktui_store/runtime_config.ex	def production_repo_config_errors(false, _repo_config), do: []	def production_repo_config_errors(false, _repo_config), do: ["x"]	apps/hacktui_store/test/hacktui_store_runtime_config_test.exs
+s38_absent_stays_absent	apps/hacktui_store/lib/hacktui_store/runtime_config.ex	def start_repo_setting(:error), do: :absent	def start_repo_setting(:error), do: false	apps/hacktui_store/test/hacktui_store_runtime_config_test.exs
+s38_empty_is_absent	apps/hacktui_store/lib/hacktui_store/runtime_config.ex	"" -> :absent	"" -> false	apps/hacktui_store/test/hacktui_store_runtime_config_test.exs
+s38_falsy_words	apps/hacktui_store/lib/hacktui_store/runtime_config.ex	v when v in @falsy -> false	v when v in @falsy -> :absent	apps/hacktui_store/test/hacktui_store_runtime_config_test.exs
+s38_reject_default_localhost	apps/hacktui_store/lib/hacktui_store/runtime_config.ex	@default_hostname "localhost"	@default_hostname "localhost.invalid"	apps/hacktui_store/test/hacktui_store_runtime_config_test.exs
+s38_wiring_false_starts_repo	config/runtime.exs	start_repo = start_repo_setting == true	start_repo = start_repo_setting != :absent	apps/hacktui_store/test/runtime_exs_start_repo_test.exs
+s38_typo_is_absent	apps/hacktui_store/lib/hacktui_store/runtime_config.ex	_ -> :absent	_ -> false	apps/hacktui_store/test/hacktui_store_runtime_config_test.exs
+s38_truthy_words	apps/hacktui_store/lib/hacktui_store/runtime_config.ex	v when v in @truthy -> true	v when v in @truthy -> :absent	apps/hacktui_store/test/hacktui_store_runtime_config_test.exs

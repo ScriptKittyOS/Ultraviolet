@@ -5,6 +5,8 @@ Status: current verified runtime matrix.
 | Mode | Required env/config | Starts Repo | Starts collab runtime | Starts agent runtime | Starts Jido instance | Intended use | Qualification status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Safe no-repo mode | default settings | No | No | No | No | local development, compile/test, architecture work | verified by default suite |
+| Production safe mode (release) | `MIX_ENV=prod` release, `HACKTUI_START_REPO=false` set explicitly, no `HACKTUI_DB_*` needed | No | No | No | No | a clean-clone release booting with no database; `HacktuiStore.Health.status/0` reports `:safe_no_repo` | verified in one container run |
+| Production, variable absent (release) | `MIX_ENV=prod` release, `HACKTUI_START_REPO` unset | refuses to boot | — | — | — | the refusal names both valid choices; absence is not a posture | verified in one container run |
 | DB-backed mode | `source .env`, `HACKTUI_START_REPO=true` | Yes | No | No | No | persistence integration and local DB-backed runtime work | verified in controlled local qualification |
 | Collaboration-enabled mode | `HACKTUI_COLLAB_PROVIDERS=slack` | Optional | Yes | No | No | exercising collab boundary startup and Slack routing/renderer code | runtime-gated only; not full transport-qualified |
 | Agent-enabled mode | `HACKTUI_AGENT_BACKENDS=jido` | Optional | No | Yes | Yes | bounded Jido workflow execution and agent boundary startup | verified for bounded investigation flow |
