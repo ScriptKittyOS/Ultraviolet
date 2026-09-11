@@ -13,7 +13,20 @@ truthy? = fn value ->
 end
 
 if config_env() != :test do
-  start_repo = truthy?.(System.get_env("HACKTUI_START_REPO", "false"))
+  # Three-way (slice 38): `:absent | false | true`. `fetch_env/1`, not `get_env/2`, because a
+  # default would make an unset variable indistinguishable from an explicit "false" -- and in
+  # production absence is refused while explicit false is a supported safe-mode posture.
+  # `HacktuiStore.RuntimeConfig` is loadable in every release that carries hacktui_store
+  # (both, today: sensor -> hub -> store); outside production the parser is still used so the
+  # reading is one definition, and absence simply means false as before.
+  start_repo_setting =
+    if Code.ensure_loaded?(HacktuiStore.RuntimeConfig) do
+      HacktuiStore.RuntimeConfig.start_repo_setting(System.fetch_env("HACKTUI_START_REPO"))
+    else
+      if truthy?.(System.get_env("HACKTUI_START_REPO", "false")), do: true, else: :absent
+    end
+
+  start_repo = start_repo_setting == true
 
   enabled_backends =
     System.get_env("HACKTUI_AGENT_BACKENDS", "")
@@ -45,10 +58,12 @@ if config_env() != :test do
     database: System.get_env("HACKTUI_DB_NAME", "hacktui_qualification_test")
   ]
 
-  # Guarded: the hacktui_sensor release does not include hacktui_store, and this file
-  # is evaluated by the release config provider against that release's code paths only.
+  # Guarded on the module being loadable: this file is evaluated by the release config
+  # provider against the release's own code paths. Measured (slice 37): both releases carry
+  # hacktui_store today (sensor -> hub -> store), so both validate here.
   if config_env() == :prod and Code.ensure_loaded?(HacktuiStore.RuntimeConfig) do
-    errors = HacktuiStore.RuntimeConfig.production_repo_config_errors(start_repo, repo_config)
+    errors =
+      HacktuiStore.RuntimeConfig.production_repo_config_errors(start_repo_setting, repo_config)
 
     if errors != [] do
       formatted_errors = Enum.map_join(errors, "\n", &"  - #{&1}")

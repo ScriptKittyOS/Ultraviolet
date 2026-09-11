@@ -14,7 +14,8 @@ What is still not production-ready:
 
 1. Production deployment qualification
 - this pass proves controlled local integration truth
-- it does not prove production deployment behavior
+- one production boot path is now measured: a `MIX_ENV=prod` release from a clean clone boots into safe mode (`:safe_no_repo`) when `HACKTUI_START_REPO=false` is set explicitly, and refuses with a message naming both choices when it is unset (slice 38, one container run)
+- it does not prove production deployment behavior beyond that boot
 
 2. Slack transport readiness
 - the Slack boundary runtime is present
