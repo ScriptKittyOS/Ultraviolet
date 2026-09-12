@@ -4,7 +4,15 @@ defmodule HacktuiAgent.DispatchTest do
   alias HacktuiAgent.MCP.Dispatch
 
   defmodule FakeQueryService do
-    def alert_queue, do: [%{alert_id: "alert-1"}]
+    def alert_queue,
+      do: [
+        %{
+          alert_id: "alert-1",
+          marking: %{classification: "S", dissemination_controls: ["NOFORN"]},
+          fingerprint: "fp-1"
+        }
+      ]
+
     def sensor_logs, do: [%{sensor_id: "sensor-1", message: "accepted connection"}]
     def jido_responses, do: [%{agent_id: "agent-1", status: "ok"}]
     def case_timeline(_repo, "case-1"), do: [%{entry_type: "case_opened"}]
@@ -24,6 +32,14 @@ defmodule HacktuiAgent.DispatchTest do
   test "dispatches read-only MCP tools to the hub query service" do
     assert {:ok, [%{alert_id: "alert-1"}]} =
              Dispatch.call(:get_latest_alerts, %{}, query_service: FakeQueryService)
+
+    # Slice 40: the marking and fingerprint pass through the single egress point untouched
+    # -- carried as fields, neither masked nor enforced.
+    assert {:ok, [row]} =
+             Dispatch.safe_call(:get_latest_alerts, %{}, query_service: FakeQueryService)
+
+    assert row.marking == %{classification: "S", dissemination_controls: ["NOFORN"]}
+    assert row.fingerprint == "fp-1"
 
     assert {:ok, [%{entry_type: "case_opened"}]} =
              Dispatch.call(:get_case_timeline, %{case_id: "case-1"},

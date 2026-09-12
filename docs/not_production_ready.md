@@ -16,6 +16,7 @@ What is still not production-ready:
 - this pass proves controlled local integration truth
 - one production boot path is now measured: a `MIX_ENV=prod` release from a clean clone boots into safe mode (`:safe_no_repo`) when `HACKTUI_START_REPO=false` is set explicitly, and refuses with a message naming both choices when it is unset (slice 38, one container run)
 - it does not prove production deployment behavior beyond that boot
+- every alert, case and audit row carries a classification marking (`HACKTUI_MARKING`, required in production); the runtime runs at system-high within one enclave and feeds a cross-domain solution -- it does not itself enforce cross-level flow and is not an accredited multi-level system
 
 2. Slack transport readiness
 - the Slack boundary runtime is present

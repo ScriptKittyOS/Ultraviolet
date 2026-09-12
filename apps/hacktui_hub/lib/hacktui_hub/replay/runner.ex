@@ -54,7 +54,9 @@ defmodule HacktuiHub.Replay.Runner do
         payload: envelope.payload || %{},
         metadata: envelope.metadata || %{},
         actor: Map.get(envelope.metadata || %{}, :actor, "replay_runner"),
-        envelope_version: Map.get(envelope.metadata || %{}, :envelope_version, 1),
+        envelope_version: envelope.envelope_version,
+        raw_message_sha256: envelope.raw_message_sha256,
+        marking: envelope.marking,
         received_at: envelope.received_at
       }
       |> ensure_observation_contract(envelope)
@@ -74,7 +76,8 @@ defmodule HacktuiHub.Replay.Runner do
     summary = payload_value(payload, :summary) || fallback_summary(envelope)
 
     fingerprint =
-      payload_value(payload, :fingerprint) ||
+      envelope.fingerprint ||
+        payload_value(payload, :fingerprint) ||
         metadata_value(envelope.metadata, :fingerprint) ||
         command.observation_id
 

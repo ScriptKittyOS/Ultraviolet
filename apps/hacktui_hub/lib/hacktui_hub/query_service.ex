@@ -358,6 +358,8 @@ defmodule HacktuiHub.QueryService do
       severity: normalize_severity(alert.severity),
       state: normalize_state(alert.state),
       disposition: alert.disposition,
+      marking: alert.marking,
+      fingerprint: alert.fingerprint,
       metadata: metadata,
       indicators:
         normalize_indicators(
@@ -376,6 +378,8 @@ defmodule HacktuiHub.QueryService do
       severity: normalize_severity(Map.get(alert, :severity)),
       state: normalize_state(Map.get(alert, :state)),
       disposition: Map.get(alert, :disposition),
+      marking: Map.get(alert, :marking),
+      fingerprint: Map.get(alert, :fingerprint),
       metadata: metadata,
       indicators:
         normalize_indicators(
@@ -391,6 +395,8 @@ defmodule HacktuiHub.QueryService do
       case_id: case_record.case_id,
       title: case_record.title,
       status: case_record.status,
+      marking: case_record.marking,
+      fingerprint: case_record.fingerprint,
       metadata: case_record.metadata || %{},
       assigned_to: case_record.assigned_to || "unassigned"
     }
@@ -401,6 +407,8 @@ defmodule HacktuiHub.QueryService do
       case_id: Map.get(case_record, :case_id),
       title: Map.get(case_record, :title),
       status: Map.get(case_record, :status),
+      marking: Map.get(case_record, :marking),
+      fingerprint: Map.get(case_record, :fingerprint),
       metadata: Map.get(case_record, :metadata) || %{},
       assigned_to: Map.get(case_record, :assigned_to) || "unassigned"
     }

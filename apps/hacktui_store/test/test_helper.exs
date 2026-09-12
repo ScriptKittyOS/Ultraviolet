@@ -122,6 +122,10 @@ defmodule HacktuiStore.TestSupport.FakeRepo do
   defp stub_result({:update_all, _query, _updates, _opts}),
     do: {Process.get({__MODULE__, :update_all_count}, 1), nil}
 
+  # Slice 40: Audits.persist/2 uses insert_all so a duplicate can be told from an insert by
+  # row count. The fake reports every row inserted.
+  defp stub_result({:insert_all, _schema, rows, _opts}), do: {length(rows), nil}
+
   defp stub_result(operation), do: operation
 end
 

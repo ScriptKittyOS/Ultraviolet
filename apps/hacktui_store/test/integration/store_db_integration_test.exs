@@ -206,10 +206,43 @@ defmodule HacktuiStore.StoreDbIntegrationTest do
       subject: "act-1"
     }
 
-    assert {:ok, %{audit_insert: %AuditEvent{} = inserted}} = Audits.persist(Repo, event)
-    assert inserted.audit_id == "audit-1"
+    # Slice 40: the insert reports its outcome; the row is read back rather than returned.
+    assert {:ok, %{audit_insert: {1, nil}, audit_outcome: :inserted}} =
+             Audits.persist(Repo, event)
+
+    inserted = Repo.get_by!(AuditEvent, audit_id: "audit-1")
     assert inserted.action == "approve_action"
-    assert Repo.get_by!(AuditEvent, audit_id: "audit-1").result == "allowed"
+    assert inserted.result == "allowed"
+    # A non-observation audit row carries the enclave marking, never `{}`.
+    assert inserted.marking["classification"] == "U"
+
+    # The same audit_id again is REFUSED: only an observation's (source, fingerprint) is a
+    # duplicate; a repeated audit_id is a caller defect and stays a loud error.
+    assert {:error, :audit_insert, %Postgrex.Error{postgres: %{code: :unique_violation}}, _} =
+             Audits.persist(Repo, event)
+
+    assert Repo.aggregate(AuditEvent, :count, :id) == 1
+
+    # An observation row re-delivered under the same identity IS a duplicate.
+    observation = %HacktuiCore.Events.AuditRecorded{
+      event
+      | event_id: "evt-8",
+        audit_id: "obs-8",
+        action: :observation_accepted,
+        subject: "obs-8",
+        source: "sensor.test",
+        fingerprint: "fp-8"
+    }
+
+    assert {:ok, %{audit_outcome: :inserted}} = Audits.persist(Repo, observation)
+
+    assert {:ok, %{audit_insert: {0, nil}, audit_outcome: :duplicate}} =
+             Audits.persist(Repo, %HacktuiCore.Events.AuditRecorded{
+               observation
+               | audit_id: "obs-8-again"
+             })
+
+    assert Repo.aggregate(AuditEvent, :count, :id) == 2
   end
 
   test "query service read models can read persisted data", %{actor: actor, now: now} do

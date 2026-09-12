@@ -8,12 +8,13 @@ defmodule HacktuiHub.IngestService do
   alias HacktuiCore.CommandHandlers.Ingest
   alias HacktuiCore.Commands.AcceptObservation
   alias HacktuiCore.Events.ObservationAccepted
+  alias HacktuiCore.Marking
   alias HacktuiHub.ThreatIntel.Enricher
   alias HacktuiHub.IngestBuffer
 
   @spec accept_observation(AcceptObservation.t(), keyword()) :: term()
   def accept_observation(%AcceptObservation{} = command, opts) do
-    command = enrich_command(command)
+    command = command |> inherit_marking() |> enrich_command()
     opts = ingest_opts(command, opts)
 
     case Ingest.handle(command, opts) do
@@ -52,6 +53,17 @@ defmodule HacktuiHub.IngestService do
 
     :ok
   end
+
+  # Slice 40: an observation that arrives unmarked inherits the enclave marking; one that
+  # arrives marked keeps its marking, normalised. This is the ingest-side inheritance, so
+  # the event's marking is never nil; the store's `MarkingField.for_write/1` covers rows
+  # that have no observation (a manually created alert). A malformed marking raises: it
+  # must not be stored as if it were one.
+  defp inherit_marking(%AcceptObservation{marking: nil} = command),
+    do: %AcceptObservation{command | marking: Marking.enclave()}
+
+  defp inherit_marking(%AcceptObservation{marking: marking} = command),
+    do: %AcceptObservation{command | marking: Marking.normalize!(marking)}
 
   defp ingest_opts(%AcceptObservation{} = command, opts) do
     now = command.received_at || command.observed_at || DateTime.utc_now()

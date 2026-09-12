@@ -52,6 +52,37 @@ defmodule HacktuiCore.CommandHandlersTest do
     assert event.observation_id == "obs-1"
   end
 
+  # Slice 40: the evidence commitment and the identity survive the command -> event boundary.
+  # The event carries the full sha256 of the raw message, never the raw bytes.
+  test "ingest handler carries fingerprint and raw_message_sha256 onto the event",
+       %{actor: actor, now: now} do
+    command = %AcceptObservation{
+      observation_id: "obs-2",
+      fingerprint: "fp-obs-2",
+      envelope_version: 1,
+      kind: :dns_query,
+      source: :sensor,
+      summary: "Suspicious DNS query observed",
+      raw_message: "dns_query suspicious.example",
+      metadata: %{},
+      severity: "high",
+      confidence: 0.91,
+      payload: %{},
+      received_at: ~U[2026-03-07 00:00:01Z],
+      actor: actor
+    }
+
+    assert {:ok, %ObservationAccepted{} = event} =
+             Ingest.handle(command, event_id: "evt-2", accepted_at: now)
+
+    assert Map.fetch!(event, :fingerprint) == "fp-obs-2"
+
+    assert Map.fetch!(event, :raw_message_sha256) ==
+             HacktuiCore.Text.original_sha256("dns_query suspicious.example")
+
+    refute Map.has_key?(event, :raw_message)
+  end
+
   test "alerting handler creates and transitions alerts", %{actor: actor, now: now} do
     create = %CreateAlert{
       alert_id: "alert-1",
