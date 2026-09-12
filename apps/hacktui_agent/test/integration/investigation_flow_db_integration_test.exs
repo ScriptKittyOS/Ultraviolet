@@ -5,6 +5,14 @@ defmodule HacktuiAgent.InvestigationFlowDbIntegrationTest do
 
   @moduletag :integration
 
+  # Slice 39: without the database environment this module SKIPS with a reason. It never
+  # raises in setup_all, which ExUnit reports as "invalid" -- a word a grep for "failures"
+  # reads as green. CI asserts skipped == 0, so a run without the environment is red there.
+  case HacktuiTest.DbEnv.db_env() do
+    :ok -> :ok
+    {:skip, reason} -> @moduletag skip: reason
+  end
+
   alias HacktuiAgent.InvestigationFlow
   alias HacktuiAgent.TestSupport.Integration
   alias HacktuiStore.{DemoDatabase, DemoSeed, Repo}
