@@ -2,11 +2,10 @@ defmodule HacktuiStore.DbUnavailableTest do
   use ExUnit.Case, async: false
 
   setup do
-    previous_start_repo = Application.get_env(:hacktui_store, :start_repo)
     previous_repo_config = Application.get_env(:hacktui_store, HacktuiStore.Repo)
 
     on_exit(fn ->
-      Application.put_env(:hacktui_store, :start_repo, previous_start_repo)
+      HacktuiTest.DbEnv.restore_start_repo!()
       Application.put_env(:hacktui_store, HacktuiStore.Repo, previous_repo_config)
 
       if Process.whereis(HacktuiStore.Supervisor) do
@@ -22,7 +21,7 @@ defmodule HacktuiStore.DbUnavailableTest do
       Application.stop(:hacktui_store)
     end
 
-    Application.put_env(:hacktui_store, :start_repo, true)
+    HacktuiTest.DbEnv.set_start_repo!(true)
 
     Application.put_env(
       :hacktui_store,

@@ -1,3 +1,7 @@
+# One definition of db_env/0, require_db_env!/0, start_repo!/0 and stop_repo!/0 for every app
+# (slice 39). The four copies this replaced were byte-identical and restored nothing.
+Code.require_file(Path.expand("../../hacktui_store/test/support/db_env.exs", __DIR__))
+
 defmodule HacktuiAgent.TestSupport.Integration do
   alias Ecto.Adapters.SQL.Sandbox
   alias HacktuiStore.Repo
@@ -11,31 +15,11 @@ defmodule HacktuiAgent.TestSupport.Integration do
     "audit_events"
   ]
 
-  @spec require_db_env!() :: :ok
-  def require_db_env! do
-    if System.get_env("HACKTUI_DB_PASS") in [nil, ""] do
-      raise "HACKTUI_DB_PASS must be set in the environment for integration qualification"
-    end
-
-    :ok
-  end
-
-  @spec start_repo!() :: :ok
-  def start_repo! do
-    if Application.spec(:hacktui_store, :modules) && Process.whereis(HacktuiStore.Supervisor) do
-      Application.stop(:hacktui_store)
-    end
-
-    Application.put_env(:hacktui_store, :start_repo, true)
-    {:ok, _} = Application.ensure_all_started(:hacktui_store)
-    :ok
-  end
-
-  @spec stop_repo!() :: :ok
-  def stop_repo! do
-    Application.stop(:hacktui_store)
-    :ok
-  end
+  # Slice 39: one definition, in apps/hacktui_store/test/support/db_env.exs.
+  defdelegate db_env(), to: HacktuiTest.DbEnv
+  defdelegate require_db_env!(), to: HacktuiTest.DbEnv
+  defdelegate start_repo!(), to: HacktuiTest.DbEnv
+  defdelegate stop_repo!(), to: HacktuiTest.DbEnv
 
   @spec migrate!() :: [term()]
   def migrate! do

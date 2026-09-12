@@ -4,23 +4,19 @@ defmodule HacktuiStore.StartupModesTest do
   alias HacktuiStore.Health
 
   setup do
-    previous = Application.get_env(:hacktui_store, :start_repo)
-
-    on_exit(fn ->
-      Application.put_env(:hacktui_store, :start_repo, previous)
-    end)
+    on_exit(fn -> HacktuiTest.DbEnv.restore_start_repo!() end)
 
     :ok
   end
 
   test "reports safe no-repo mode by default" do
-    Application.put_env(:hacktui_store, :start_repo, false)
+    HacktuiTest.DbEnv.set_start_repo!(false)
 
     assert %{mode: :safe_no_repo, repo_enabled?: false, repo_started?: false} = Health.status()
   end
 
   test "reports degraded mode when repo startup is enabled but the repo is not started" do
-    Application.put_env(:hacktui_store, :start_repo, true)
+    HacktuiTest.DbEnv.set_start_repo!(true)
 
     assert %{
              mode: {:degraded, :repo_not_started},
@@ -31,11 +27,11 @@ defmodule HacktuiStore.StartupModesTest do
   end
 
   test "supervisor child list includes repo only when enabled" do
-    Application.put_env(:hacktui_store, :start_repo, false)
+    HacktuiTest.DbEnv.set_start_repo!(false)
     {:ok, {_flags, children}} = HacktuiStore.Supervisor.init([])
     refute Enum.any?(children, &match?(%{id: HacktuiStore.Repo}, &1))
 
-    Application.put_env(:hacktui_store, :start_repo, true)
+    HacktuiTest.DbEnv.set_start_repo!(true)
     {:ok, {_flags, children}} = HacktuiStore.Supervisor.init([])
     assert Enum.any?(children, &match?(%{id: HacktuiStore.Repo}, &1))
   end

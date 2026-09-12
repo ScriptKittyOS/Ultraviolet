@@ -4,15 +4,10 @@ defmodule HacktuiStore.HealthProductionTest do
   alias HacktuiStore.Health
 
   setup do
-    original_start_repo = Application.get_env(:hacktui_store, :start_repo)
     original_repo_config = Application.get_env(:hacktui_store, HacktuiStore.Repo)
 
     on_exit(fn ->
-      if is_nil(original_start_repo) do
-        Application.delete_env(:hacktui_store, :start_repo)
-      else
-        Application.put_env(:hacktui_store, :start_repo, original_start_repo)
-      end
+      HacktuiTest.DbEnv.restore_start_repo!()
 
       if is_nil(original_repo_config) do
         Application.delete_env(:hacktui_store, HacktuiStore.Repo)
@@ -25,7 +20,7 @@ defmodule HacktuiStore.HealthProductionTest do
   end
 
   test "reports production configuration blockers for demo defaults" do
-    Application.put_env(:hacktui_store, :start_repo, true)
+    HacktuiTest.DbEnv.set_start_repo!(true)
 
     Application.put_env(:hacktui_store, HacktuiStore.Repo,
       username: "hacktui",
@@ -45,7 +40,7 @@ defmodule HacktuiStore.HealthProductionTest do
   end
 
   test "reports production configuration ready for explicit non-demo config" do
-    Application.put_env(:hacktui_store, :start_repo, true)
+    HacktuiTest.DbEnv.set_start_repo!(true)
 
     Application.put_env(:hacktui_store, HacktuiStore.Repo,
       username: "hacktui_app",

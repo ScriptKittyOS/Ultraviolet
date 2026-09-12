@@ -11,7 +11,10 @@ defmodule HacktuiStore.MixProject do
       lockfile: "../../mix.lock",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      # test/support/db_env.exs is loaded by every app's test_helper via Code.require_file; it is
+      # not a test file, so exclude it from ExUnit's load-filter warning (slice 39).
+      test_ignore_filters: [~r"^test/support/"]
     ]
   end
 

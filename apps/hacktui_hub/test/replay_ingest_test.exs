@@ -7,6 +7,23 @@ defmodule HacktuiHub.ReplayIngestTest do
   alias HacktuiHub.{IngestService, QueryService}
   alias HacktuiHub.Replay.Runner
 
+  # Slice 39: this module asserts the in-memory (no-repo) read path, so it ESTABLISHES that
+  # state instead of inheriting whatever the previous module left behind. Measured at seed 0
+  # on origin/main = 9170a88: an earlier integration module left :start_repo true, the hub
+  # queried a repo that was not there, and `snapshot.observations` came back [].
+  setup_all do
+    HacktuiTest.DbEnv.set_start_repo!(false)
+
+    if Process.whereis(HacktuiHub.Supervisor), do: Application.stop(:hacktui_hub)
+    if Process.whereis(HacktuiStore.Supervisor), do: Application.stop(:hacktui_store)
+
+    {:ok, _} = Application.ensure_all_started(:hacktui_hub)
+    refute Process.whereis(HacktuiStore.Repo), "this module asserts the no-repo path"
+
+    on_exit(fn -> HacktuiTest.DbEnv.restore_start_repo!() end)
+    :ok
+  end
+
   test "accept_observation assigns ingest defaults and exposes live snapshot observations" do
     IngestService.reset_recent_observations()
 

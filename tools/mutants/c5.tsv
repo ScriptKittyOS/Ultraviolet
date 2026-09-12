@@ -47,3 +47,11 @@ s38_reject_default_localhost	apps/hacktui_store/lib/hacktui_store/runtime_config
 s38_wiring_false_starts_repo	config/runtime.exs	start_repo = start_repo_setting == true	start_repo = start_repo_setting != :absent	apps/hacktui_store/test/runtime_exs_start_repo_test.exs
 s38_typo_is_absent	apps/hacktui_store/lib/hacktui_store/runtime_config.ex	_ -> :absent	_ -> false	apps/hacktui_store/test/hacktui_store_runtime_config_test.exs
 s38_truthy_words	apps/hacktui_store/lib/hacktui_store/runtime_config.ex	v when v in @truthy -> true	v when v in @truthy -> :absent	apps/hacktui_store/test/hacktui_store_runtime_config_test.exs
+s39_restore_present_value	apps/hacktui_store/test/support/db_env.exs	{:ok, previous} -> Application.put_env(@app, @key, previous)	{:ok, _previous} -> :ok	apps/hacktui_store/test/db_env_guard_test.exs
+s39_restore_absent_deletes	apps/hacktui_store/test/support/db_env.exs	:error -> Application.delete_env(@app, @key)	:error -> :ok	apps/hacktui_store/test/db_env_guard_test.exs
+s39_skip_tag_present	apps/hacktui_hub/test/integration/hub_restart_smoke_test.exs	{:skip, reason} -> @moduletag skip: reason	{:skip, _reason} -> :ok	apps/hacktui_store/test/db_env_guard_test.exs
+s39_raw_setter_caught	apps/hacktui_store/test/hacktui_store_db_unavailable_test.exs	HacktuiTest.DbEnv.set_start_repo!(true)	Application.put_env(:hacktui_store, :start_repo, true)	apps/hacktui_store/test/db_env_guard_test.exs
+s39_ci_skipped_zero	tools/ci/integration_gate.sh	if [ "$skipped" != "0" ]; then	if [ "$skipped" != "1" ]; then	apps/hacktui_core/test/ci_integration_summary_test.exs
+s39_ci_invalid_zero	tools/ci/integration_gate.sh	if [ "$invalid" != "0" ]; then	if [ "$invalid" != "1" ]; then	apps/hacktui_core/test/ci_integration_summary_test.exs
+s39_guard_regex_bang	apps/hacktui_store/test/db_env_guard_test.exs	defp def_regex(fun), do: ~r/^\s*defp? #{Regex.escape(fun)}(\s*\(|\s*,|\s+do\b|\s*$)/m	defp def_regex(fun), do: ~r/^\s*def #{Regex.escape(fun)}\b/m	apps/hacktui_store/test/db_env_guard_test.exs
+s39_ci_errexit_off	tools/ci/integration_gate.sh	set +e\nset -u	set -e\nset -u	apps/hacktui_core/test/ci_integration_summary_test.exs
