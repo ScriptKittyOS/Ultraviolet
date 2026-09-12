@@ -73,6 +73,18 @@ defmodule HacktuiHub.ReplayIngestTest do
              ~U[2026-03-07 13:00:10Z]
            ]
 
+    # Slice 40: the fixture's own marking reaches the event (source :explicit, not the
+    # enclave default), and the digest is over the replay's raw message.
+    assert first.marking == %{
+             classification: "U",
+             owner_producer: [],
+             dissemination_controls: [],
+             source: :explicit
+           }
+
+    assert first.fingerprint == "replay-demo.case-1-alert_observed-1"
+    assert String.length(first.raw_message_sha256) == 64
+
     assert %ObservationAccepted{
              source: "demo.case-1",
              kind: "alert_observed",

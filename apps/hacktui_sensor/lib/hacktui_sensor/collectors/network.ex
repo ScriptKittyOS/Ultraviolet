@@ -305,7 +305,10 @@ defmodule HacktuiSensor.Collectors.Network do
                 http_method: sanitize_field(http_method),
                 http_uri: sanitize_field(http_uri),
                 proto: sanitize_field(proto),
-                info: sanitize_field(info)
+                info: sanitize_field(info),
+                # The evidence commitment is over the bytes as received, before any
+                # field was sanitised.
+                raw_line_sha256: Text.original_sha256(trimmed)
               },
               state
             )
@@ -397,9 +400,16 @@ defmodule HacktuiSensor.Collectors.Network do
         "severity" => severity
       }
 
+      community_id = community_id(src, event.src_port, dst, event.dst_port, proto)
+      payload = Map.put(payload, "community_id", community_id)
+      fingerprint = fingerprint_for(community_id, state.host_identity)
+
       command = %AcceptObservation{
-        observation_id: "net-#{System.unique_integer([:positive, :monotonic])}",
-        fingerprint: fingerprint_for(payload),
+        # Derived from the fingerprint, not a VM counter: a counter restarts at 1 with
+        # the node, and the audit_id is built from this id.
+        observation_id: "net-" <> binary_part(fingerprint, 0, 16),
+        fingerprint: fingerprint,
+        raw_message_sha256: Map.get(event, :raw_line_sha256),
         source: "sensor.network",
         kind: "network.flow",
         summary: summary,
@@ -438,8 +448,10 @@ defmodule HacktuiSensor.Collectors.Network do
     # Bounded to the summary budget, not the field budget: this msg is concatenated
     # behind a "NETWORK ERROR: " prefix and the result becomes the alert title, which
     # is varchar(255). Capping at @max_field_bytes produced a 527-byte title.
+    received_sha256 = Text.original_sha256(msg)
     msg = Text.ingest_or_nil(msg, max_bytes: @max_summary_bytes - 40) || "unavailable"
     now = DateTime.utc_now() |> DateTime.truncate(:second)
+    fingerprint = fingerprint_for("neterr:" <> received_sha256, state.host_identity)
 
     summary =
       case state.tshark_path do
@@ -448,8 +460,9 @@ defmodule HacktuiSensor.Collectors.Network do
       end
 
     command = %AcceptObservation{
-      observation_id: "neterr-#{System.unique_integer([:positive, :monotonic])}",
-      fingerprint: "neterr-#{:erlang.phash2(msg)}",
+      observation_id: "neterr-" <> binary_part(fingerprint, 0, 16),
+      fingerprint: fingerprint,
+      raw_message_sha256: received_sha256,
       source: "sensor.network",
       kind: "system.error",
       summary: summary,
@@ -656,15 +669,36 @@ defmodule HacktuiSensor.Collectors.Network do
     |> Enum.reject(&is_nil/1)
   end
 
-  defp fingerprint_for(payload) do
-    src = Map.get(payload, "src", "0.0.0.0")
-    dst = Map.get(payload, "dst", "0.0.0.0")
-    proto = Map.get(payload, "proto", "UNKNOWN")
-    site = Map.get(payload, "site", "")
-    method = Map.get(payload, "method", "")
-    path = Map.get(payload, "path", "")
+  # Slice 40. Two identities, deliberately distinct:
+  #
+  #   * `community_id` -- Community-ID-style: a digest of the *ordered* 5-tuple, so both
+  #     directions of one conversation share it. It is carried in the payload for
+  #     correlation and is NOT the fingerprint, because a fingerprint is unique per
+  #     observation under `audit_events (source, fingerprint)`: a flow id alone would
+  #     make every repeat of a beacon a "duplicate" and drop it.
+  #   * `fingerprint` -- that flow id plus the observing host and the capture instant, so
+  #     a re-forwarded copy of this observation is the same observation and the next
+  #     packet of the same flow is not.
+  #
+  # The previous `phash2/1` over six fields was 27 bits and time-free: identical flows
+  # collided across the whole history, and a VM restart could not tell its own past from
+  # a fresh event.
+  defp community_id(src, src_port, dst, dst_port, proto) do
+    a = {to_string(src), src_port || 0}
+    b = {to_string(dst), dst_port || 0}
+    {first, second} = if a <= b, do: {a, b}, else: {b, a}
 
-    "fp-#{:erlang.phash2({src, dst, proto, site, method, path})}"
+    {fa, pa} = first
+    {fb, pb} = second
+
+    Text.original_sha256("1:#{proto}:#{fa}:#{pa}:#{fb}:#{pb}")
+  end
+
+  defp fingerprint_for(identity, host_identity) do
+    Text.original_sha256(
+      "#{identity}:#{host_identity}:#{System.system_time(:nanosecond)}:" <>
+        "#{System.unique_integer([:positive, :monotonic])}"
+    )
   end
 
   defp likely_error_line?(line) do

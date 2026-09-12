@@ -89,6 +89,9 @@ defmodule HacktuiHub.TestSupport.FakeTransactionRepo do
         _ = op
         {:cont, {:ok, Map.put(acc, name, {1, nil})}}
 
+      {name, {:insert_all, _schema, rows, _opts}}, {:ok, acc} ->
+        {:cont, {:ok, Map.put(acc, name, {length(rows), nil})}}
+
       {name, op}, {:ok, acc} ->
         {:cont, {:ok, Map.put(acc, name, op)}}
     end)

@@ -50,9 +50,10 @@ defmodule HacktuiHub.Runtime do
       |> apply_threat_intel_defaults()
       |> enrich_observation_attrs()
 
-    # IngestService.accept_observation/2 is total -- it always returns {:ok, accepted}.
-    # An error branch here is provably unreachable; persistence failures are surfaced in
-    # the result's :persistence field by safely_persist/3 instead.
+    # IngestService.accept_observation/2 returns {:ok, accepted} for every well-formed
+    # command; its one raise is a malformed marking (slice 40), which is a caller defect,
+    # not a persistence outcome. Persistence failures are surfaced in the result's
+    # :persistence field by safely_persist/3 instead.
     {:ok, accepted} = IngestService.accept_observation(command, opts)
 
     if repo_available?(repo) do
@@ -80,8 +81,17 @@ defmodule HacktuiHub.Runtime do
   end
 
   # An observation is always audited. It becomes an alert only when detection promotes it.
+  # Slice 40: an observation already audited under the same (source, fingerprint) -- a
+  # replayed fixture, a re-forwarded batch -- is reported as `:duplicate` and goes no
+  # further: it is not promoted a second time, and no second row is written anywhere.
   defp persist_accepted_observation(repo, accepted, opts) do
     case Audits.persist(repo, observation_audit_event(accepted)) do
+      {:ok, %{audit_outcome: :duplicate} = audit_persistence} ->
+        {:ok,
+         accepted
+         |> unpersisted_result(:duplicate)
+         |> Map.put(:audit_persistence, audit_persistence)}
+
       {:ok, audit_persistence} ->
         if Detection.promote?(accepted) do
           promote_observation(repo, accepted, audit_persistence, opts)
@@ -153,9 +163,25 @@ defmodule HacktuiHub.Runtime do
       action: :observation_accepted,
       occurred_at: accepted.accepted_at,
       result: :accepted,
-      subject: to_string(accepted.observation_id)
+      subject: to_string(accepted.observation_id),
+      source: to_string_or_nil(accepted.source),
+      fingerprint: accepted.fingerprint,
+      marking: accepted.marking,
+      metadata: %{
+        raw_message_sha256: accepted.raw_message_sha256,
+        fingerprint: accepted.fingerprint,
+        kind: to_string_or_nil(accepted.kind)
+      }
     }
   end
+
+  # The marking and identity an alert or case inherits from the observation that promoted
+  # it. `nil` marking means the store writes the enclave marking (a manually created alert
+  # has no observation); the fingerprint is simply absent then.
+  defp provenance_opts(%ObservationAccepted{} = accepted),
+    do: [marking: accepted.marking, fingerprint: accepted.fingerprint]
+
+  defp provenance_opts(_no_observation), do: []
 
   # Collectors set actor to a plain string; Audits.audit_changeset/1 expects an ActorRef
   # and does event.actor.id, which raised BadMapError on every live observation.
@@ -224,7 +250,13 @@ defmodule HacktuiHub.Runtime do
     repo = Keyword.get(opts, :repo, Repo)
 
     with {:ok, aggregate, event} <- CaseworkService.open_case(command, opts),
-         {:ok, persistence} <- Cases.persist_open(repo, aggregate, event) do
+         {:ok, persistence} <-
+           Cases.persist_open(
+             repo,
+             aggregate,
+             event,
+             Keyword.take(opts, [:marking, :fingerprint])
+           ) do
       {:ok, %{aggregate: aggregate, event: event, persistence: persistence}}
     else
       other -> normalize_persistence_error(other)
@@ -458,7 +490,8 @@ defmodule HacktuiHub.Runtime do
 
     case find_correlated_alert(repo, aggregate, observation, correlation_window) do
       nil ->
-        with {:ok, persistence} <- Alerts.persist_create(repo, aggregate, event),
+        with {:ok, persistence} <-
+               Alerts.persist_create(repo, aggregate, event, alert_provenance(observation, opts)),
              {:ok, metadata_row} <-
                persist_alert_correlation_metadata(
                  repo,
@@ -520,6 +553,12 @@ defmodule HacktuiHub.Runtime do
         end
     end
   end
+
+  # An observation's provenance wins; a manual alert may carry its own in opts.
+  defp alert_provenance(%ObservationAccepted{} = observation, _opts),
+    do: provenance_opts(observation)
+
+  defp alert_provenance(_no_observation, opts), do: Keyword.take(opts, [:marking, :fingerprint])
 
   defp find_correlated_alert(repo, aggregate, observation, window_minutes) do
     title = Map.get(aggregate, :title)
@@ -810,6 +849,7 @@ defmodule HacktuiHub.Runtime do
         case_opts =
           opts
           |> Keyword.put(:repo, repo)
+          |> Keyword.merge(provenance_opts(observation))
           |> Keyword.put_new(:opened_at, now)
           |> Keyword.put_new(:occurred_at, now)
           |> Keyword.put_new(
@@ -871,7 +911,10 @@ defmodule HacktuiHub.Runtime do
                deduplicated?: false,
                case_id: case_id,
                status: status,
-               threat_score: threat_score
+               threat_score: threat_score,
+               # Slice 40: exposed so the marking and fingerprint the case was opened with
+               # can be asserted without a database.
+               persistence: persistence
              }}
 
           {:error, reason} ->

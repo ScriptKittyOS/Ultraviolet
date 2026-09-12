@@ -100,9 +100,18 @@ defmodule HacktuiSensor do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
       payload = normalized_payload(state, now)
 
+      # Slice 40: identity that survives a restart. The heartbeat has no OS-level identity
+      # (that is a later collector's); host + node + instant is what it is. The observation
+      # id derives from it rather than from a VM counter that restarts at 1.
+      fingerprint =
+        Text.original_sha256(
+          "process_signals:#{state.host_identity}:#{state.source_node}:" <>
+            "#{DateTime.to_iso8601(now)}:#{System.unique_integer([:positive, :monotonic])}"
+        )
+
       command = %AcceptObservation{
-        observation_id: unique_id("obs"),
-        fingerprint: unique_id("fp"),
+        observation_id: "obs-" <> binary_part(fingerprint, 0, 16),
+        fingerprint: fingerprint,
         source: "sensor.process_signals",
         summary: "Process signals heartbeat from #{state.host_identity}",
         raw_message: inspect(payload),
@@ -160,10 +169,6 @@ defmodule HacktuiSensor do
         {:ok, value} -> to_string(value)
         _ -> "unknown-host"
       end
-    end
-
-    defp unique_id(prefix) do
-      "#{prefix}-#{System.unique_integer([:positive, :monotonic])}"
     end
   end
 
@@ -248,21 +253,30 @@ defmodule HacktuiSensor do
           state
 
         true ->
-          args = [
-            "--no-pager",
-            "--output=short-iso",
-            "--follow",
-            "--lines=#{state.lines}"
-          ]
-
           port =
             Port.open(
               {:spawn_executable, journalctl_path()},
-              [:binary, :exit_status, :stderr_to_stdout, args: args]
+              [:binary, :exit_status, :stderr_to_stdout, args: journalctl_args(state)]
             )
 
           %{state | port: port, buffer: ""}
       end
+    end
+
+    # Slice 40: JSON output carries `__CURSOR`, the journal's own identity for the entry,
+    # which becomes the observation's fingerprint; `MESSAGE` is the line. `--all` is
+    # load-bearing: without it journalctl encodes any field over 4096 bytes as null, so a
+    # long line would lose its text and its classification.
+    # The 64 KiB line bound below still applies to whatever comes back.
+    @doc false
+    def journalctl_args(state) do
+      [
+        "--no-pager",
+        "--output=json",
+        "--all",
+        "--follow",
+        "--lines=#{state.lines}"
+      ]
     end
 
     # Line length is chosen by whoever writes to the journal, and the buffer fills
@@ -284,23 +298,107 @@ defmodule HacktuiSensor do
       # chooses these bytes, and they previously reached raw_message, summary and the
       # payload with no sanitiser at all. Classify the cleaned text so what drives the
       # decision is the same text that gets stored and rendered.
-      case Text.ingest(raw_line) do
+      #
+      # Slice 40: the port now speaks `--output=json`, so a line is a JSON object whose
+      # MESSAGE is the text and whose __CURSOR is the entry's identity. A line that is
+      # not such an object (a stray stderr line, or a test feeding plain text) is
+      # treated as the message itself, with a content-and-instant fallback identity.
+      case unwrap_journal_line(raw_line) do
+        {:no_message, cursor} ->
+          # A journal object with a cursor but no MESSAGE. Never dropped silently: the
+          # cursor names the entry an operator can look up.
+          Logger.warning("[hacktui_sensor] journal entry #{inspect(cursor)} carries no MESSAGE")
+          :ok
+
+        {message, cursor} ->
+          ingest_journal_message(message, cursor, state)
+      end
+    end
+
+    defp ingest_journal_message(message, cursor, state) do
+      case Text.ingest(message) do
         {:ok, line} ->
-          emit_journal_observation(line, state)
+          emit_journal_observation(
+            line,
+            journal_fingerprint(cursor, message, state),
+            Text.original_sha256(message),
+            state
+          )
 
         {:error, reason} ->
           # Never drop silently. A gap an operator can see is categorically different
           # from one they cannot, and the digest keeps the original bytes referenceable.
           Logger.warning(
-            "[hacktui_sensor] dropped journal line (#{reason}, #{byte_size(raw_line)} bytes, " <>
-              "sha256=#{String.slice(Text.original_sha256(raw_line), 0, 16)})"
+            "[hacktui_sensor] dropped journal line (#{reason}, #{byte_size(message)} bytes, " <>
+              "sha256=#{String.slice(Text.original_sha256(message), 0, 16)})"
           )
 
           :ok
       end
     end
 
-    defp emit_journal_observation(line, state) do
+    # journald's JSON shapes for MESSAGE (journalctl(1), "json"): a string; a list of byte
+    # values when the field is not valid UTF-8; a list of strings when the field occurs
+    # more than once in the entry; null or absent when there is none (with `--all`, only
+    # when there truly is none). Every shape is untrusted bytes and goes through
+    # Text.ingest/1 the same way. A line that is not a journal object at all (stderr
+    # noise, or a test feeding plain text) is treated as the message itself.
+    defp unwrap_journal_line(raw_line) do
+      case JSON.decode(raw_line) do
+        {:ok, %{"MESSAGE" => message} = entry} when is_binary(message) ->
+          {message, journal_cursor(entry)}
+
+        {:ok, %{"MESSAGE" => parts} = entry} when is_list(parts) ->
+          {journal_message_from_list(parts, raw_line), journal_cursor(entry)}
+
+        {:ok, %{"__CURSOR" => _} = entry} ->
+          {:no_message, journal_cursor(entry)}
+
+        _not_a_journal_object ->
+          {raw_line, nil}
+      end
+    end
+
+    defp journal_message_from_list(parts, raw_line) do
+      cond do
+        parts != [] and Enum.all?(parts, &(is_integer(&1) and &1 in 0..255)) ->
+          :binary.list_to_bin(parts)
+
+        parts != [] and Enum.all?(parts, &is_binary/1) ->
+          Enum.join(parts, "\n")
+
+        true ->
+          raw_line
+      end
+    end
+
+    # A cursor is journald's own token: `s=…;i=…;b=…;m=…;t=…;x=…`, hex and separators,
+    # ~130 bytes. It is still bytes from a process we do not control, and it becomes a
+    # column value and a fingerprint, so it is bounded to that shape; anything else is
+    # treated as no cursor and the line gets the fallback identity.
+    # `\z`, not `$`: `$` matches before a trailing newline.
+    @cursor_shape ~r/\A[A-Za-z0-9=;_-]{1,512}\z/
+
+    defp journal_cursor(%{"__CURSOR" => cursor}) when is_binary(cursor) do
+      if Regex.match?(@cursor_shape, cursor), do: cursor, else: nil
+    end
+
+    defp journal_cursor(_entry), do: nil
+
+    # The cursor is journald's identity for the entry: stable across a re-read of the same
+    # journal, so a re-forwarded line is one observation. Without one, the content and the
+    # instant are the best available and do not collide across restarts.
+    defp journal_fingerprint(cursor, _message, _state) when is_binary(cursor),
+      do: "journal:" <> cursor
+
+    defp journal_fingerprint(nil, message, state) do
+      Text.original_sha256(
+        "journald:#{state.host_identity}:#{System.system_time(:nanosecond)}:" <>
+          "#{System.unique_integer([:positive, :monotonic])}:" <> Text.original_sha256(message)
+      )
+    end
+
+    defp emit_journal_observation(line, fingerprint, received_sha256, state) do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
       {kind, raw_summary, severity} = classify_line(line)
 
@@ -309,8 +407,11 @@ defmodule HacktuiSensor do
       summary = Text.ingest_or_nil(raw_summary, max_bytes: 200) || "journal event"
 
       command = %AcceptObservation{
-        observation_id: unique_id("journal"),
-        fingerprint: unique_id("fp"),
+        # From the fingerprint, not a VM counter; the digest is over the
+        # MESSAGE bytes as received, before Text.ingest/1.
+        observation_id: "journal-" <> binary_part(Text.original_sha256(fingerprint), 0, 16),
+        fingerprint: fingerprint,
+        raw_message_sha256: received_sha256,
         source: "sensor.journald",
         kind: kind,
         summary: summary,
@@ -384,10 +485,6 @@ defmodule HacktuiSensor do
       else
         String.slice(text, 0, max_len - 1) <> "…"
       end
-    end
-
-    defp unique_id(prefix) do
-      "#{prefix}-#{System.unique_integer([:positive, :monotonic])}"
     end
   end
 end

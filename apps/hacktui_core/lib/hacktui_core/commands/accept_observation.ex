@@ -20,6 +20,8 @@ defmodule HacktuiCore.Commands.AcceptObservation do
   defstruct [
     :observation_id,
     :fingerprint,
+    :raw_message_sha256,
+    :marking,
     :envelope_version,
     :source,
     :kind,
@@ -36,6 +38,9 @@ defmodule HacktuiCore.Commands.AcceptObservation do
 
   @type t :: %__MODULE__{
           observation_id: String.t(),
+          fingerprint: String.t() | nil,
+          raw_message_sha256: String.t() | nil,
+          marking: HacktuiCore.Marking.t() | nil,
           envelope_version: pos_integer(),
           source: atom(),
           kind: atom() | String.t(),
@@ -72,6 +77,8 @@ defmodule HacktuiCore.Commands.AcceptObservation do
     struct!(__MODULE__, %{
       observation_id: observation_id,
       fingerprint: fingerprint,
+      raw_message_sha256: Map.get(envelope, :raw_message_sha256),
+      marking: Map.get(envelope, :marking),
       envelope_version: Map.get(envelope, :envelope_version, 1),
       source: fetch!(envelope, :source),
       kind: fetch!(envelope, :kind),

@@ -8,13 +8,16 @@ defmodule HacktuiStore.Cases do
   alias Ecto.Multi
   alias HacktuiCore.Aggregates.InvestigationCase
   alias HacktuiCore.Events.{CaseOpened, CaseTransitioned}
-  alias HacktuiStore.Schema.{CaseRecord, CaseTimelineEntry}
+  alias HacktuiStore.Schema.{CaseRecord, CaseTimelineEntry, MarkingField}
 
-  @spec persist_open(module(), InvestigationCase.t(), CaseOpened.t()) ::
+  @typedoc "Slice 40: the marking and fingerprint of the alert that opened the case."
+  @type open_opts :: [marking: HacktuiCore.Marking.t() | nil, fingerprint: String.t() | nil]
+
+  @spec persist_open(module(), InvestigationCase.t(), CaseOpened.t(), open_opts()) ::
           HacktuiStore.transaction_result()
-  def persist_open(repo, %InvestigationCase{} = case_record, %CaseOpened{} = event) do
+  def persist_open(repo, %InvestigationCase{} = case_record, %CaseOpened{} = event, opts \\ []) do
     case_record
-    |> open_multi(event)
+    |> open_multi(event, opts)
     |> repo.transaction()
   end
 
@@ -26,10 +29,10 @@ defmodule HacktuiStore.Cases do
     |> repo.transaction()
   end
 
-  @spec open_multi(InvestigationCase.t(), CaseOpened.t()) :: Ecto.Multi.t()
-  def open_multi(%InvestigationCase{} = case_record, %CaseOpened{} = event) do
+  @spec open_multi(InvestigationCase.t(), CaseOpened.t(), open_opts()) :: Ecto.Multi.t()
+  def open_multi(%InvestigationCase{} = case_record, %CaseOpened{} = event, opts \\ []) do
     Multi.new()
-    |> Multi.insert(:case_insert, case_changeset(case_record))
+    |> Multi.insert(:case_insert, case_changeset(case_record, opts))
     |> Multi.insert(
       :case_timeline_insert,
       timeline_changeset(
@@ -80,13 +83,15 @@ defmodule HacktuiStore.Cases do
     )
   end
 
-  defp case_changeset(%InvestigationCase{} = case_record) do
+  defp case_changeset(%InvestigationCase{} = case_record, opts) do
     CaseRecord.changeset(%CaseRecord{}, %{
       id: Ecto.UUID.generate(),
       case_id: case_record.case_id,
       title: case_record.title,
       status: Atom.to_string(case_record.status),
       assigned_to: case_record.assigned_to,
+      marking: MarkingField.for_write(Keyword.get(opts, :marking)),
+      fingerprint: Keyword.get(opts, :fingerprint),
       metadata: %{
         source_alert_ids: case_record.source_alert_ids
       }

@@ -30,6 +30,67 @@ defmodule HacktuiHub.ReplayLoaderTest do
            } = second
   end
 
+  # Slice 40: a fixture is untrusted input; the identity and digest it supplies are bounded.
+  describe "envelope v2 fields from a fixture" do
+    defp write_fixture(lines) do
+      path =
+        Path.join(System.tmp_dir!(), "s40-loader-#{System.unique_integer([:positive])}.jsonl")
+
+      File.write!(path, Enum.map_join(lines, "\n", &Jason.encode!/1) <> "\n")
+      on_exit(fn -> File.rm(path) end)
+      path
+    end
+
+    defp line(extra) do
+      Map.merge(
+        %{
+          "source" => "t",
+          "kind" => "k",
+          "payload" => %{},
+          "received_at" => "2026-03-07T13:00:00Z"
+        },
+        extra
+      )
+    end
+
+    test "fingerprint, digest and marking are read from the line" do
+      digest = String.duplicate("ab", 32)
+
+      path =
+        write_fixture([
+          line(%{
+            "fingerprint" => "line-1",
+            "raw_message_sha256" => digest,
+            "marking" => %{"classification" => "C"}
+          })
+        ])
+
+      assert [
+               %Envelope{
+                 fingerprint: "line-1",
+                 raw_message_sha256: ^digest,
+                 marking: %{"classification" => "C"},
+                 envelope_version: 2
+               }
+             ] =
+               Loader.load_fixture!(path)
+    end
+
+    test "a digest that is not a sha256 is refused, including one with a trailing newline" do
+      for bad <- ["not-a-digest", String.duplicate("a", 64) <> "\n"] do
+        path = write_fixture([line(%{"raw_message_sha256" => bad})])
+        assert_raise ArgumentError, ~r/raw_message_sha256/, fn -> Loader.load_fixture!(path) end
+      end
+    end
+
+    test "a fingerprint with control bytes or over 512 bytes is refused" do
+      for bad <- ["fp\e[2J", String.duplicate("x", 513), "abc\n", 42] do
+        path = write_fixture([line(%{"fingerprint" => bad})])
+        assert_raise ArgumentError, ~r/fingerprint/, fn -> Loader.load_fixture!(path) end
+      end
+    end
+  end
+
   test "run_fixture!/1 replays fixtures into ordered accepted observations" do
     accepted = Runner.run_fixture!("fixtures/replay/case-1.jsonl")
 

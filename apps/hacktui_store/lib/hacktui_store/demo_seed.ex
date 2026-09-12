@@ -34,6 +34,8 @@ defmodule HacktuiStore.DemoSeed do
       %{
         id: Ecto.UUID.generate(),
         alert_id: "alert-1",
+        # Slice 40: seeded rows are marked like any other row; insert_all bypasses the changeset.
+        marking: HacktuiCore.Marking.enclave(),
         title: "Beaconing to malicious.example",
         severity: "high",
         state: "investigating",
@@ -48,6 +50,8 @@ defmodule HacktuiStore.DemoSeed do
       %{
         id: Ecto.UUID.generate(),
         alert_id: "alert-2",
+        # Slice 40: seeded rows are marked like any other row; insert_all bypasses the changeset.
+        marking: HacktuiCore.Marking.enclave(),
         title: "Repeat DNS lookup for malicious.example",
         severity: "medium",
         state: "open",
@@ -62,6 +66,8 @@ defmodule HacktuiStore.DemoSeed do
       %{
         id: Ecto.UUID.generate(),
         alert_id: "alert-3",
+        # Slice 40: seeded rows are marked like any other row; insert_all bypasses the changeset.
+        marking: HacktuiCore.Marking.enclave(),
         title: "Benign lookup noise",
         severity: "low",
         state: "open",
@@ -80,6 +86,8 @@ defmodule HacktuiStore.DemoSeed do
       case_id: @case_id,
       title: "Case 1 - Suspicious DNS investigation",
       status: "triage",
+      # Slice 40: seeded rows are marked like any other row; insert_all bypasses the changeset.
+      marking: HacktuiCore.Marking.enclave(),
       assigned_to: "demo-operator",
       metadata: %{
         seeded: true,

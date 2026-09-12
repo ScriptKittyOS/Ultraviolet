@@ -8,13 +8,19 @@ defmodule HacktuiStore.Alerts do
   alias Ecto.Multi
   alias HacktuiCore.Aggregates.Alert, as: DomainAlert
   alias HacktuiCore.Events.{AlertCreated, AlertTransitioned}
-  alias HacktuiStore.Schema.{Alert, AlertTransition}
+  alias HacktuiStore.Schema.{Alert, AlertTransition, MarkingField}
 
-  @spec persist_create(module(), DomainAlert.t(), AlertCreated.t()) ::
+  @typedoc """
+  Slice 40: `:marking` (the observation's, or the enclave's when absent) and
+  `:fingerprint` (the promoting observation's identity, if it had one).
+  """
+  @type create_opts :: [marking: HacktuiCore.Marking.t() | nil, fingerprint: String.t() | nil]
+
+  @spec persist_create(module(), DomainAlert.t(), AlertCreated.t(), create_opts()) ::
           HacktuiStore.transaction_result()
-  def persist_create(repo, %DomainAlert{} = alert, %AlertCreated{} = event) do
+  def persist_create(repo, %DomainAlert{} = alert, %AlertCreated{} = event, opts \\ []) do
     alert
-    |> create_multi(event)
+    |> create_multi(event, opts)
     |> repo.transaction()
   end
 
@@ -26,10 +32,10 @@ defmodule HacktuiStore.Alerts do
     |> repo.transaction()
   end
 
-  @spec create_multi(DomainAlert.t(), AlertCreated.t()) :: Ecto.Multi.t()
-  def create_multi(%DomainAlert{} = alert, %AlertCreated{} = event) do
+  @spec create_multi(DomainAlert.t(), AlertCreated.t(), create_opts()) :: Ecto.Multi.t()
+  def create_multi(%DomainAlert{} = alert, %AlertCreated{} = event, opts \\ []) do
     Multi.new()
-    |> Multi.insert(:alert_insert, alert_changeset(alert, event))
+    |> Multi.insert(:alert_insert, alert_changeset(alert, event, opts))
   end
 
   @spec transition_multi(DomainAlert.t(), AlertTransitioned.t()) :: Ecto.Multi.t()
@@ -55,7 +61,7 @@ defmodule HacktuiStore.Alerts do
     |> Multi.insert(:alert_transition_insert, alert_transition_changeset(event))
   end
 
-  defp alert_changeset(%DomainAlert{} = alert, %AlertCreated{} = event) do
+  defp alert_changeset(%DomainAlert{} = alert, %AlertCreated{} = event, opts) do
     Alert.changeset(%Alert{}, %{
       id: Ecto.UUID.generate(),
       alert_id: alert.alert_id,
@@ -63,6 +69,8 @@ defmodule HacktuiStore.Alerts do
       severity: Atom.to_string(alert.severity),
       state: Atom.to_string(alert.state),
       disposition: Atom.to_string(alert.disposition),
+      marking: MarkingField.for_write(Keyword.get(opts, :marking)),
+      fingerprint: Keyword.get(opts, :fingerprint),
       metadata: %{
         observation_refs: alert.observation_refs,
         created_event_id: event.event_id

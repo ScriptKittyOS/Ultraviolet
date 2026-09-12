@@ -28,6 +28,24 @@ if config_env() != :test do
 
   start_repo = start_repo_setting == true
 
+  # Slice 40: HACKTUI_MARKING, read the same three ways. In production absence refuses
+  # (below); elsewhere it means the unclassified default. The marking is inert -- it is
+  # carried on every record for a cross-domain solution to read, and enforces nothing here.
+  # Fail closed: the parser lives in hacktui_core, which every release carries; if a
+  # release ever did not, production must refuse here rather than reach the first
+  # ingest without an enclave marking.
+  marking_setting =
+    cond do
+      Code.ensure_loaded?(HacktuiCore.Marking) ->
+        HacktuiCore.Marking.setting(System.fetch_env("HACKTUI_MARKING"))
+
+      config_env() == :prod ->
+        raise "invalid production runtime configuration: HacktuiCore.Marking is not loadable"
+
+      true ->
+        :absent
+    end
+
   enabled_backends =
     System.get_env("HACKTUI_AGENT_BACKENDS", "")
     |> parse_csv.()
@@ -73,6 +91,34 @@ if config_env() != :test do
       #{formatted_errors}
       """
     end
+  end
+
+  if config_env() == :prod and Code.ensure_loaded?(HacktuiCore.Marking) do
+    marking_errors = HacktuiCore.Marking.production_errors(marking_setting)
+
+    if marking_errors != [] do
+      formatted_errors = Enum.map_join(marking_errors, "\n", &"  - #{&1}")
+
+      raise """
+      invalid production runtime configuration for :hacktui_core
+      #{formatted_errors}
+      """
+    end
+  end
+
+  # Outside production, ABSENT means the unclassified default; an explicit value that
+  # does not parse is refused in every environment -- an explicit value is never ambiguous.
+  case marking_setting do
+    {:ok, marking} ->
+      config :hacktui_core, enclave_marking: marking
+
+    {:error, reason} ->
+      raise "invalid runtime configuration for :hacktui_core\n  - #{reason}"
+
+    :absent ->
+      if Code.ensure_loaded?(HacktuiCore.Marking) do
+        config :hacktui_core, enclave_marking: HacktuiCore.Marking.enclave_default()
+      end
   end
 
   config :hacktui_store, start_repo: start_repo

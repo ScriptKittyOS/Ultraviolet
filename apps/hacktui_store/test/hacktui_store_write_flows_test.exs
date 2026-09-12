@@ -200,8 +200,20 @@ defmodule HacktuiStore.WriteFlowsTest do
 
   test "persists audit records", %{audit_event: audit_event} do
     assert {:ok, operations} = Audits.persist(FakeRepo, audit_event)
-    assert {:insert, changeset, _opts} = FakeRepo.operations().audit_insert
-    assert changeset.changes.audit_id == "audit-1"
-    assert changeset.changes.action == "approve_action"
+    assert operations.audit_outcome == :inserted
+
+    # Slice 40: one validated row through insert_all, ON CONFLICT DO NOTHING.
+    assert {:insert_all, HacktuiStore.Schema.AuditEvent, [row], opts} =
+             FakeRepo.operations().audit_insert
+
+    assert opts[:on_conflict] == :nothing
+    # Scoped to the identity index: an audit_id collision must stay an error.
+    assert opts[:conflict_target] == Audits.identity_index()
+    assert {:unsafe_fragment, fragment} = opts[:conflict_target]
+    assert fragment =~ "(source, fingerprint)"
+    assert fragment =~ "fingerprint IS NOT NULL"
+    assert row.audit_id == "audit-1"
+    assert row.action == "approve_action"
+    assert row.marking.classification == "U"
   end
 end

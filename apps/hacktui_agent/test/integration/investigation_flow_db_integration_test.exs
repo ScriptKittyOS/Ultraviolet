@@ -48,6 +48,10 @@ defmodule HacktuiAgent.InvestigationFlowDbIntegrationTest do
     assert case_updated_at == ~U[2026-03-07 13:00:00.000000Z]
     assert opened_at == ~U[2026-03-07 13:00:00.000000Z]
     assert linked_at == ~U[2026-03-07 13:00:10.000000Z]
+
+    # Slice 40: seeded rows are marked like any other row (insert_all bypasses the changeset).
+    for %Alert{marking: marking} <- Repo.all(Alert), do: assert(marking["classification"] == "U")
+    assert Repo.get_by!(CaseRecord, case_id: "case-1").marking["classification"] == "U"
   end
 
   test "run/1 works against the real local db-backed runtime with seeded demo data" do

@@ -355,9 +355,14 @@ defmodule HacktuiTui.LiveDashboardView do
 
     marker = row_marker(index, selected_index, focused)
 
+    # Slice 40: the classification level ("U", "TS") on the wide row -- the level only,
+    # because a banner cut to fit ("TS//SI" for "TS//SI/NOFORN") would be a different
+    # marking. Display only; the full marking travels with the row.
+    level = alert |> Map.get(:marking) |> HacktuiCore.Marking.classification_label()
+
     cond do
       width >= 46 ->
-        prefix = " #{marker} #{pad_plain(sev, 8)} TS:#{score_text} "
+        prefix = " #{marker} #{pad_plain(sev, 8)} #{pad_plain(level, 3)} TS:#{score_text} "
         tail = max(width - visible_length(prefix), 1)
         {prefix <> truncate_plain(actor_text <> title, tail), sev}
 

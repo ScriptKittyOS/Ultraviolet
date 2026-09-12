@@ -11,10 +11,14 @@ defmodule HacktuiStore.RuntimeExsStartRepoTest do
   @runtime_exs Path.expand("../../../config/runtime.exs", __DIR__)
   @var "HACKTUI_START_REPO"
   @db_vars ~w(HACKTUI_DB_USER HACKTUI_DB_PASS HACKTUI_DB_HOST HACKTUI_DB_PORT HACKTUI_DB_NAME)
+  @marking_var "HACKTUI_MARKING"
 
   setup do
-    saved = for v <- [@var | @db_vars], into: %{}, do: {v, System.get_env(v)}
+    saved = for v <- [@var, @marking_var | @db_vars], into: %{}, do: {v, System.get_env(v)}
     for v <- Map.keys(saved), do: System.delete_env(v)
+    # Slice 40: production also refuses an absent marking (runtime_exs_marking_test.exs owns
+    # that). Set it here so every refusal below is about HACKTUI_START_REPO alone.
+    System.put_env(@marking_var, "U")
 
     on_exit(fn ->
       for {v, val} <- saved do
